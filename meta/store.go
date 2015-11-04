@@ -1302,6 +1302,34 @@ func (s *Store) ShardGroupsByTimeRange(database, policy string, tmin, tmax time.
 	return
 }
 
+// ShardIDsByTimeRange returns a slice of shards that may contain data in the time range.
+func (s *Store) ShardIDsByTimeRange(sources influxql.Sources, tmin, tmax time.Time) (a []uint64, err error) {
+	m := make(map[uint64]struct{})
+	for _, src := range sources {
+		mm, ok := src.(*influxql.Measurement)
+		if !ok {
+			return nil, fmt.Errorf("invalid source type: %#v", src)
+		}
+
+		groups, err := s.ShardGroupsByTimeRange(mm.Database, mm.RetentionPolicy, tmin, tmax)
+		if err != nil {
+			return nil, err
+		}
+		for _, g := range groups {
+			for _, sh := range g.Shards {
+				m[sh.ID] = struct{}{}
+			}
+		}
+	}
+
+	a = make([]uint64, 0, len(m))
+	for k := range m {
+		a = append(a, k)
+	}
+
+	return a, nil
+}
+
 // VisitRetentionPolicies calls the given function with full retention policy details.
 func (s *Store) VisitRetentionPolicies(f func(d DatabaseInfo, r RetentionPolicyInfo)) {
 	s.read(func(data *Data) error {

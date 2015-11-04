@@ -22,7 +22,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Ensure the store returns an error
+// Ensure the store returns an error if already open.
 func TestStore_Open_ErrStoreOpen(t *testing.T) {
 	t.Parallel()
 	s := MustOpenStore()
