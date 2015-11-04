@@ -2,583 +2,439 @@ package tsdb_test
 
 import (
 	"encoding/json"
-	"io/ioutil"
-	"os"
-	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/influxdb/influxdb/influxql"
 	"github.com/influxdb/influxdb/meta"
-	"github.com/influxdb/influxdb/models"
 	"github.com/influxdb/influxdb/tsdb"
 )
 
-var sgID = uint64(2)
-var shardID = uint64(1)
+const (
+	// DefaultDatabase is the default database name used by tests.
+	DefaultDatabase = "db0"
 
-func TestWritePointsAndExecuteQuery(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
+	// DefaultRetentionPolicy is the default retention policy name used by tests.
+	DefaultRetentionPolicy = "rp0"
+)
 
-	// Write first point.
-	if err := store.WriteToShard(shardID, []models.Point{models.MustNewPoint(
-		"cpu",
-		map[string]string{"host": "server"},
-		map[string]interface{}{"value": 1.0},
-		time.Unix(1, 2),
-	)}); err != nil {
-		t.Fatalf(err.Error())
-	}
+// Ensure the query executor can execute a basic query.
+func TestQueryExecutor_ExecuteQuery_Select(t *testing.T) {
+	sh := MustOpenShard()
+	defer sh.Close()
+	sh.MustWritePointsString(`
+cpu,region=serverA value=1 0
+cpu,region=serverA value=2 10
+cpu,region=serverB value=3 20
+`)
 
-	// Write second point.
-	if err := store.WriteToShard(shardID, []models.Point{models.MustNewPoint(
-		"cpu",
-		map[string]string{"host": "server"},
-		map[string]interface{}{"value": 1.0},
-		time.Unix(2, 3),
-	)}); err != nil {
-		t.Fatalf(err.Error())
-	}
-
-	got := executeAndGetJSON("SELECT * FROM cpu", executor)
-	exepected := `[{"series":[{"name":"cpu","columns":["time","host","value"],"values":[["1970-01-01T00:00:01.000000002Z","server",1],["1970-01-01T00:00:02.000000003Z","server",1]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT mean(value) + mean(value) as value FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time","value"],"values":[["1970-01-01T00:00:00Z",2]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT value + value FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time",""],"values":[["1970-01-01T00:00:01.000000002Z",2],["1970-01-01T00:00:02.000000003Z",2]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT value + value as sum FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time","sum"],"values":[["1970-01-01T00:00:01.000000002Z",2],["1970-01-01T00:00:02.000000003Z",2]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT * FROM cpu GROUP BY *", executor)
-	exepected = `[{"series":[{"name":"cpu","tags":{"host":"server"},"columns":["time","value"],"values":[["1970-01-01T00:00:01.000000002Z",1],["1970-01-01T00:00:02.000000003Z",1]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	store.Close()
-	conf := store.EngineOptions.Config
-	store = tsdb.NewStore(store.Path())
-	store.EngineOptions.Config = conf
-	if err := store.Open(); err != nil {
-		t.Fatalf(err.Error())
-	}
-	executor.Store = store
-	executor.ShardMapper = &testShardMapper{store: store}
-
-	got = executeAndGetJSON("SELECT * FROM cpu GROUP BY *", executor)
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-}
-
-func TestAggregateMathQuery(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
-
-	// Write two points.
-	if err := store.WriteToShard(shardID, []models.Point{
-		models.MustNewPoint(
-			"cpu",
-			map[string]string{"host": "server"},
-			map[string]interface{}{"value": 1.0, "temperature": 2.0},
-			time.Unix(1, 2),
-		),
-		models.MustNewPoint(
-			"cpu",
-			map[string]string{"host": "server"},
-			map[string]interface{}{"value": 3.0, "temperature": 4.0},
-			time.Unix(2, 3),
-		),
-	}); err != nil {
-		t.Fatalf(err.Error())
-	}
-
-	got := executeAndGetJSON("SELECT max(value) + min(value) as value FROM cpu", executor)
-	exepected := `[{"series":[{"name":"cpu","columns":["time","value"],"values":[["1970-01-01T00:00:00Z",4]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT sum(value) + mean(value) FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time",""],"values":[["1970-01-01T00:00:00Z",6]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT first(value) + last(value), min(value) FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time","","min"],"values":[["1970-01-01T00:00:00Z",4,1]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT count(value) + last(value), median(value) FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time","","median"],"values":[["1970-01-01T00:00:00Z",5,2]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT sum(value) / count(value) FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time",""],"values":[["1970-01-01T00:00:00Z",2]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT median(value) * count(value) + max(value) FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time",""],"values":[["1970-01-01T00:00:00Z",7]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT median(value) * count(value) + max(value)/min(value), sum(value) FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time","","sum"],"values":[["1970-01-01T00:00:00Z",7,4]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("SELECT median(value) * count(value) * max(value)/min(value) / sum(value) FROM cpu", executor)
-	exepected = `[{"series":[{"name":"cpu","columns":["time",""],"values":[["1970-01-01T00:00:00Z",3]]}]}]`
-	if exepected != got {
-		t.Fatalf("\nexp: %s\ngot: %s", exepected, got)
-	}
-
-	store.Close()
-}
-
-// Ensure writing a point and updating it results in only a single point.
-func TestWritePointsAndExecuteQuery_Update(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
-
-	// Write original point.
-	if err := store.WriteToShard(1, []models.Point{models.MustNewPoint(
-		"temperature",
-		map[string]string{},
-		map[string]interface{}{"value": 100.0},
-		time.Unix(0, 0),
-	)}); err != nil {
-		t.Fatalf(err.Error())
-	}
-
-	// Restart store.
-	store.Close()
-	conf := store.EngineOptions.Config
-	store = tsdb.NewStore(store.Path())
-	store.EngineOptions.Config = conf
-	if err := store.Open(); err != nil {
-		t.Fatalf(err.Error())
-	}
-	executor.Store = store
-	executor.ShardMapper = &testShardMapper{store: store}
-
-	// Rewrite point with new value.
-	if err := store.WriteToShard(1, []models.Point{models.MustNewPoint(
-		"temperature",
-		map[string]string{},
-		map[string]interface{}{"value": 200.0},
-		time.Unix(0, 0),
-	)}); err != nil {
-		t.Fatalf(err.Error())
-	}
-
-	got := executeAndGetJSON("select * from temperature", executor)
-	exp := `[{"series":[{"name":"temperature","columns":["time","value"],"values":[["1970-01-01T00:00:00Z",200]]}]}]`
-	if exp != got {
-		t.Fatalf("\n\nexp: %s\ngot: %s", exp, got)
-	}
-}
-
-func TestDropSeriesStatement(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
-
-	pt := models.MustNewPoint(
-		"cpu",
-		map[string]string{"host": "server"},
-		map[string]interface{}{"value": 1.0},
-		time.Unix(1, 2),
-	)
-
-	err := store.WriteToShard(shardID, []models.Point{pt})
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-
-	got := executeAndGetJSON("SELECT * FROM cpu GROUP BY *", executor)
-	exepected := `[{"series":[{"name":"cpu","tags":{"host":"server"},"columns":["time","value"],"values":[["1970-01-01T00:00:01.000000002Z",1]]}]}]`
-	if exepected != got {
-		t.Fatalf("exp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("drop series from cpu", executor)
-
-	got = executeAndGetJSON("SELECT * FROM cpu GROUP BY *", executor)
-	exepected = `[{}]`
-	if exepected != got {
-		t.Fatalf("exp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("show tag keys from cpu", executor)
-	exepected = `[{}]`
-	if exepected != got {
-		t.Fatalf("exp: %s\ngot: %s", exepected, got)
-	}
-
-	store.Close()
-	conf := store.EngineOptions.Config
-	store = tsdb.NewStore(store.Path())
-	store.EngineOptions.Config = conf
-	store.Open()
-	executor.Store = store
-
-	got = executeAndGetJSON("select * from cpu", executor)
-	exepected = `[{}]`
-	if exepected != got {
-		t.Fatalf("exp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("show tag keys from cpu", executor)
-	exepected = `[{}]`
-	if exepected != got {
-		t.Fatalf("exp: %s\ngot: %s", exepected, got)
-	}
-}
-
-func TestDropMeasurementStatement(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
-
-	pt := models.MustNewPoint(
-		"cpu",
-		map[string]string{"host": "server"},
-		map[string]interface{}{"value": 1.0},
-		time.Unix(1, 2),
-	)
-	pt2 := models.MustNewPoint(
-		"memory",
-		map[string]string{"host": "server"},
-		map[string]interface{}{"value": 1.0},
-		time.Unix(1, 2),
-	)
-
-	if err := store.WriteToShard(shardID, []models.Point{pt, pt2}); err != nil {
-		t.Fatal(err)
-	}
-
-	got := executeAndGetJSON("show series", executor)
-	exepected := `[{"series":[{"name":"cpu","columns":["_key","host"],"values":[["cpu,host=server","server"]]},{"name":"memory","columns":["_key","host"],"values":[["memory,host=server","server"]]}]}]`
-	if exepected != got {
-		t.Fatalf("exp: %s\ngot: %s", exepected, got)
-	}
-
-	got = executeAndGetJSON("drop measurement memory", executor)
-	exepected = `[{}]`
-	if exepected != got {
-		t.Fatalf("exp: %s\ngot: %s", exepected, got)
-	}
-
-	validateDrop := func() {
-		got = executeAndGetJSON("show series", executor)
-		exepected = `[{"series":[{"name":"cpu","columns":["_key","host"],"values":[["cpu,host=server","server"]]}]}]`
-		if exepected != got {
-			t.Fatalf("exp: %s\ngot: %s", exepected, got)
+	e := NewQueryExecutor()
+	e.MetaStore.ShardIDsByTimeRangeFn = func(sources influxql.Sources, tmin, tmax time.Time) (a []uint64, err error) {
+		if !reflect.DeepEqual(sources, influxql.Sources{&influxql.Measurement{Database: "db0", RetentionPolicy: "rp0", Name: "cpu"}}) {
+			t.Fatalf("unexpected sources: %s", spew.Sdump(sources))
+		} else if tmin.IsZero() {
+			t.Fatalf("unexpected tmin: %s", tmin)
+		} else if tmax.IsZero() {
+			t.Fatalf("unexpected tmax: %s", tmax)
 		}
-		got = executeAndGetJSON("show measurements", executor)
-		exepected = `[{"series":[{"name":"measurements","columns":["name"],"values":[["cpu"]]}]}]`
-		if exepected != got {
-			t.Fatalf("exp: %s\ngot: %s", exepected, got)
+		return []uint64{100}, nil
+	}
+	e.Store.ShardsFn = func(ids []uint64) []*tsdb.Shard {
+		if !reflect.DeepEqual(ids, []uint64{100}) {
+			t.Fatalf("unexpected shard ids: %+v", ids)
 		}
-		got = executeAndGetJSON("select * from memory", executor)
-		exepected = `[{}]`
-		if exepected != got {
-			t.Fatalf("exp: %s\ngot: %s", exepected, got)
-		}
+		return []*tsdb.Shard{sh.Shard}
 	}
 
-	validateDrop()
-	store.Close()
-	store, executor = testStoreAndExecutor(store.Path())
-	validateDrop()
+	res := e.MustExecuteQueryString("db0", `SELECT value FROM cpu`)
+	if s := MustMarshalJSON(res); s != `[{"series":[{"name":"cpu","columns":["time","value"],"values":[["1970-01-01T00:00:00Z",1],["1970-01-01T00:00:10Z",2],["1970-01-01T00:00:20Z",3]]}]}]` {
+		t.Fatalf("unexpected results: %s", s)
+	}
 }
 
-// mock for the metaExecutor
-type metaExec struct {
-	fn func(stmt influxql.Statement) *influxql.Result
-}
+// Ensure the query executor can select from a tsdb.Store.
+func TestQueryExecutor_ExecuteQuery_Select_Wildcard_Intg(t *testing.T) {
+	s := MustOpenStore()
+	defer s.Close()
 
-func (m *metaExec) ExecuteStatement(stmt influxql.Statement) *influxql.Result {
-	return m.fn(stmt)
-}
-
-func TestDropDatabase(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
-
-	pt := models.MustNewPoint(
-		"cpu",
-		map[string]string{"host": "server"},
-		map[string]interface{}{"value": 1.0},
-		time.Unix(1, 2),
+	s.MustCreateShardWithData("db0", "rp0", 0,
+		`cpu,host=serverA value=1 0`,
+		`cpu,host=serverA value=2 10`,
+		`cpu,host=serverB value=3 20`,
 	)
 
-	if err := store.WriteToShard(shardID, []models.Point{pt}); err != nil {
-		t.Fatal(err)
-	}
-
-	got := executeAndGetJSON("SELECT * FROM cpu GROUP BY *", executor)
-	expected := `[{"series":[{"name":"cpu","tags":{"host":"server"},"columns":["time","value"],"values":[["1970-01-01T00:00:01.000000002Z",1]]}]}]`
-	if expected != got {
-		t.Fatalf("exp: %s\ngot: %s", expected, got)
-	}
-
-	var name string
-	me := &metaExec{fn: func(stmt influxql.Statement) *influxql.Result {
-		name = stmt.(*influxql.DropDatabaseStatement).Name
-		return &influxql.Result{}
-	}}
-	executor.MetaStatementExecutor = me
-
-	// verify the database is there on disk
-	dbPath := filepath.Join(store.Path(), "foo")
-	if _, err := os.Stat(dbPath); err != nil {
-		t.Fatalf("execpted database dir %s to exist", dbPath)
-	}
-
-	got = executeAndGetJSON("drop database foo", executor)
-	expected = `[{}]`
-	if got != expected {
-		t.Fatalf("exp: %s\ngot: %s", expected, got)
-	}
-
-	if name != "foo" {
-		t.Fatalf("expected the MetaStatementExecutor to be called with database name foo, but got %s", name)
-	}
-
-	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
-		t.Fatalf("expected database dir %s to be gone", dbPath)
-	}
-
-	store.Close()
-	conf := store.EngineOptions.Config
-	store = tsdb.NewStore(store.Path())
-	store.EngineOptions.Config = conf
-	store.Open()
-	executor.Store = store
-	executor.ShardMapper = &testShardMapper{store: store}
-
-	if err := store.WriteToShard(shardID, []models.Point{pt}); err == nil || err.Error() != "shard not found" {
-		t.Fatalf("expected shard to not be found")
+	res := NewQueryExecutorStore(s).MustExecuteQueryStringJSON("db0", `SELECT * FROM cpu`)
+	if res != `[{"series":[{"name":"cpu","columns":["time","host","value"],"values":[["1970-01-01T00:00:00Z","serverA",1],["1970-01-01T00:00:10Z","serverA",2],["1970-01-01T00:00:20Z","serverB",3]]}]}]` {
+		t.Fatalf("unexpected results: %s", res)
 	}
 }
 
-// Ensure that queries for which there is no data result in an empty set.
-func TestQueryNoData(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
+// Ensure the query executor returns an empty set if no points are returned.
+/*
+func TestQueryExecutor_ExecuteQuery_Select_Empty(t *testing.T) {
+	e := NewQueryExecutor()
 
-	got := executeAndGetJSON("select * from /.*/", executor)
-	expected := `[{}]`
-	if expected != got {
-		t.Fatalf("exp: %s\ngot: %s", expected, got)
+	// Return an empty iterator.
+	e.IteratorCreator.CreateIteratorFn = func(opt influxql.IteratorOptions) (influxql.Iterator, error) {
+		return &FloatIterator{}, nil
 	}
 
-	got = executeAndGetJSON("show series", executor)
-	expected = `[{}]`
-	if expected != got {
-		t.Fatalf("exp: %s\ngot: %s", expected, got)
+	res := e.MustExecuteQueryString("db0", `SELECT value FROM cpu`)
+	if MustMarshalJSON(res) != `[{}]` {
+		t.Fatalf("unexpected results: %s", spew.Sdump(res))
 	}
-
-	store.Close()
 }
+*/
+// Ensure the query executor can execute a DROP SERIES statement.
+func TestQueryExecutor_ExecuteQuery_DropSeries(t *testing.T) {
+	e := NewQueryExecutor()
 
-// ensure that authenticate doesn't return an error if the user count is zero and they're attempting
-// to create a user.
-func TestAuthenticateIfUserCountZeroAndCreateUser(t *testing.T) {
-	store, executor := testStoreAndExecutor("")
-	defer os.RemoveAll(store.Path())
-	ms := &testMetastore{userCount: 0}
-	executor.MetaStore = ms
-
-	if err := executor.Authorize(nil, mustParseQuery("create user foo with password 'asdf' with all privileges"), ""); err != nil {
-		t.Fatalf("should have authenticated if no users and attempting to create a user but got error: %s", err.Error())
+	e.Store.DeleteSeriesFn = func(database string, sources influxql.Sources, condition influxql.Expr) error {
+		if database != `db0` {
+			t.Fatalf("unexpected database: %s", database)
+		} else if !reflect.DeepEqual(sources, influxql.Sources{&influxql.Measurement{Database: "db0", RetentionPolicy: "rp0", Name: "cpu"}}) {
+			t.Fatalf("unexpected sources: %s", spew.Sdump(sources))
+		} else if condition != nil {
+			t.Fatalf("unexpected condition: %s", spew.Sdump(condition))
+		}
+		return nil
 	}
 
-	if executor.Authorize(nil, mustParseQuery("create user foo with password 'asdf'"), "") == nil {
-		t.Fatalf("should have failed authentication if no user given and no users exist for create user query that doesn't grant all privileges")
-	}
-
-	if executor.Authorize(nil, mustParseQuery("select * from foo"), "") == nil {
-		t.Fatalf("should have failed authentication if no user given and no users exist for any query other than create user")
-	}
-
-	ms.userCount = 1
-
-	if executor.Authorize(nil, mustParseQuery("create user foo with password 'asdf'"), "") == nil {
-		t.Fatalf("should have failed authentication if no user given and users exist")
-	}
-
-	if executor.Authorize(nil, mustParseQuery("select * from foo"), "") == nil {
-		t.Fatalf("should have failed authentication if no user given and users exist")
+	res := e.MustExecuteQueryString("db0", `drop series from cpu`)
+	if s := MustMarshalJSON(res); s != `[{}]` {
+		t.Fatalf("unexpected results: %s", s)
 	}
 }
 
-func testStoreAndExecutor(storePath string) (*tsdb.Store, *tsdb.QueryExecutor) {
-	if storePath == "" {
-		storePath, _ = ioutil.TempDir("", "")
+// Ensure the query executor can execute a DROP MEASUREMENT statement.
+func TestQueryExecutor_ExecuteQuery_DropMeasurement(t *testing.T) {
+	e := NewQueryExecutor()
+	e.Store.DeleteMeasurementFn = func(database, name string) error {
+		if database != `db0` {
+			t.Fatalf("unexpected database: %s", database)
+		} else if name != `memory` {
+			t.Fatalf("unexpected name: %s", name)
+		}
+		return nil
 	}
 
-	store := tsdb.NewStore(storePath)
-	store.EngineOptions.Config.WALDir = filepath.Join(storePath, "wal")
-
-	err := store.Open()
-	if err != nil {
-		panic(err)
+	res := e.MustExecuteQueryString("db0", `drop measurement memory`)
+	if s := MustMarshalJSON(res); s != `[{}]` {
+		t.Fatalf("unexpected results: %s", s)
 	}
-	database := "foo"
-	retentionPolicy := "bar"
-	shardID := uint64(1)
-	store.CreateShard(database, retentionPolicy, shardID)
-
-	executor := tsdb.NewQueryExecutor(store)
-	executor.MetaStore = &testMetastore{}
-	executor.ShardMapper = &testShardMapper{store: store}
-
-	return store, executor
 }
 
-func executeAndGetJSON(query string, executor *tsdb.QueryExecutor) string {
-	ch, err := executor.ExecuteQuery(mustParseQuery(query), "foo", 20, make(chan struct{}))
-	if err != nil {
-		panic(err.Error())
-	}
-
-	var results []*influxql.Result
-	for r := range ch {
-		results = append(results, r)
-	}
-
-	b, err := json.Marshal(results)
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
-}
-
-type testMetastore struct {
-	userCount int
-}
-
-func (t *testMetastore) Database(name string) (*meta.DatabaseInfo, error) {
-	return &meta.DatabaseInfo{
-		Name: name,
-		DefaultRetentionPolicy: "foo",
-		RetentionPolicies: []meta.RetentionPolicyInfo{
-			{
-				Name: "bar",
-				ShardGroups: []meta.ShardGroupInfo{
-					{
-						ID:        uint64(1),
-						StartTime: time.Now().Add(-time.Hour),
-						EndTime:   time.Now().Add(time.Hour),
-						Shards: []meta.ShardInfo{
-							{
-								ID:     uint64(1),
-								Owners: []meta.ShardOwner{{NodeID: 1}},
-							},
+// Ensure the query executor can execute a DROP DATABASE statement.
+//
+// Dropping a database involves executing against the meta store as well as
+// removing all associated shards from the local TSDB storage.
+func TestQueryExecutor_ExecuteQuery_DropDatabase(t *testing.T) {
+	e := NewQueryExecutor()
+	e.MetaStore.DatabaseFn = func(name string) (*meta.DatabaseInfo, error) {
+		return &meta.DatabaseInfo{
+			Name: name,
+			DefaultRetentionPolicy: "rp0",
+			RetentionPolicies: []meta.RetentionPolicyInfo{
+				{
+					Name: "rp0",
+					ShardGroups: []meta.ShardGroupInfo{
+						{
+							ID:     1,
+							Shards: []meta.ShardInfo{{ID: 10}, {ID: 20}},
+						},
+						{
+							ID:     2,
+							Shards: []meta.ShardInfo{{ID: 50}},
+						},
+					},
+				},
+				{
+					Name: "rp1",
+					ShardGroups: []meta.ShardGroupInfo{
+						{
+							ID:     3,
+							Shards: []meta.ShardInfo{{ID: 60}},
 						},
 					},
 				},
 			},
-		},
+		}, nil
+	}
+	e.MetaStatementExecutor.ExecuteStatementFn = func(stmt influxql.Statement) *influxql.Result {
+		if s := stmt.String(); s != `DROP DATABASE db0` {
+			t.Fatalf("unexpected meta statement: %s", s)
+		}
+		return &influxql.Result{}
+	}
+
+	e.Store.DeleteDatabaseFn = func(name string, shardIDs []uint64) error {
+		if name != `db0` {
+			t.Fatalf("unexpected name: %s", name)
+		} else if !reflect.DeepEqual(shardIDs, []uint64{10, 20, 50, 60}) {
+			t.Fatalf("unexpected shard ids: %+v", shardIDs)
+		}
+		return nil
+	}
+
+	res := e.MustExecuteQueryString("db0", `drop database db0`)
+	if s := MustMarshalJSON(res); s != `[{}]` {
+		t.Fatalf("unexpected results: %s", s)
+	}
+}
+
+// Ensure that the query executor doesn't return an error when user count is zero
+// and the user is attempting to create a user.
+func TestQueryExecutor_Authorize_CreateUser_NoUsers(t *testing.T) {
+	/*
+		store, executor := testStoreAndExecutor("")
+		defer os.RemoveAll(store.Path())
+		ms := &testMetastore{userCount: 0}
+		executor.MetaStore = ms
+
+		if err := executor.Authorize(nil, MustParseQuery("create user foo with password 'asdf' with all privileges"), ""); err != nil {
+			t.Fatalf("should have authenticated if no users and attempting to create a user but got error: %s", err.Error())
+		}
+
+		if executor.Authorize(nil, MustParseQuery("create user foo with password 'asdf'"), "") == nil {
+			t.Fatalf("should have failed authentication if no user given and no users exist for create user query that doesn't grant all privileges")
+		}
+
+		if executor.Authorize(nil, MustParseQuery("select * from foo"), "") == nil {
+			t.Fatalf("should have failed authentication if no user given and no users exist for any query other than create user")
+		}
+
+		ms.userCount = 1
+
+		if executor.Authorize(nil, MustParseQuery("create user foo with password 'asdf'"), "") == nil {
+			t.Fatalf("should have failed authentication if no user given and users exist")
+		}
+
+		if executor.Authorize(nil, MustParseQuery("select * from foo"), "") == nil {
+			t.Fatalf("should have failed authentication if no user given and users exist")
+		}
+	*/
+}
+
+// QueryExecutor represents a test wrapper for tsdb.QueryExecutor.
+type QueryExecutor struct {
+	*tsdb.QueryExecutor
+
+	Store                    QueryExecutorStore
+	MetaStore                QueryExecutorMetaStore
+	MetaStatementExecutor    StatementExecutor
+	MonitorStatementExecutor StatementExecutor
+	IntoWriter               IntoWriter
+}
+
+// NewQueryExecutor returns a new instance of QueryExecutor.
+func NewQueryExecutor() *QueryExecutor {
+	e := &QueryExecutor{}
+	e.QueryExecutor = tsdb.NewQueryExecutor()
+	e.QueryExecutor.Store = &e.Store
+	e.QueryExecutor.MetaStore = &e.MetaStore
+	e.QueryExecutor.MetaStatementExecutor = &e.MetaStatementExecutor
+	e.QueryExecutor.MonitorStatementExecutor = &e.MonitorStatementExecutor
+	e.QueryExecutor.IntoWriter = &e.IntoWriter
+
+	// By default, always return a database when looking it up.
+	e.MetaStore.DatabaseFn = MetaStoreDatabaseFoundFn
+
+	// By default, returns the same sources when expanding.
+	e.Store.ExpandSourcesFn = DefaultStoreExpandSourcesFn
+
+	return e
+}
+
+// NewQueryExecutorStore returns a new instance of QueryExecutor attached to a store.
+func NewQueryExecutorStore(s *Store) *QueryExecutor {
+	e := NewQueryExecutor()
+	e.QueryExecutor.Store = s
+
+	// Always return all shards from store.
+	e.MetaStore.ShardIDsByTimeRangeFn = func(sources influxql.Sources, tmin, tmax time.Time) ([]uint64, error) {
+		return s.ShardIDs(), nil
+	}
+
+	return e
+}
+
+// MustExecuteQuery executes a query. Panic on error.
+func (e *QueryExecutor) MustExecuteQueryString(database string, s string) []*influxql.Result {
+	q := MustParseQuery(s)
+
+	// Execute query.
+	ch, err := e.ExecuteQuery(q, database, 1000, make(chan struct{}))
+	if err != nil {
+		panic(err)
+	}
+
+	// Read all results from the channel.
+	var a []*influxql.Result
+	for {
+		select {
+		case result, ok := <-ch:
+			if !ok {
+				return a
+			}
+			a = append(a, result)
+		case <-time.After(10 * time.Second):
+			panic("query timeout")
+		}
+	}
+}
+
+// MustExecuteQueryStringJSON executes a query and returns JSON. Panic on error.
+func (e *QueryExecutor) MustExecuteQueryStringJSON(database string, s string) string {
+	return MustMarshalJSON(e.MustExecuteQueryString(database, s))
+}
+
+// QueryExecutorStore is a mockable implementation of QueryExecutor.Store.
+type QueryExecutorStore struct {
+	ShardsFn            func(ids []uint64) []*tsdb.Shard
+	ExpandSourcesFn     func(sources influxql.Sources) (influxql.Sources, error)
+	DeleteDatabaseFn    func(name string, shardIDs []uint64) error
+	DeleteMeasurementFn func(database, name string) error
+	DeleteSeriesFn      func(database string, sources influxql.Sources, condition influxql.Expr) error
+}
+
+func (s *QueryExecutorStore) Shards(ids []uint64) []*tsdb.Shard {
+	return s.ShardsFn(ids)
+}
+func (s *QueryExecutorStore) ExpandSources(sources influxql.Sources) (influxql.Sources, error) {
+	return s.ExpandSourcesFn(sources)
+}
+func (s *QueryExecutorStore) DeleteDatabase(name string, shardIDs []uint64) error {
+	return s.DeleteDatabaseFn(name, shardIDs)
+}
+func (s *QueryExecutorStore) DeleteMeasurement(database, name string) error {
+	return s.DeleteMeasurementFn(database, name)
+}
+func (s *QueryExecutorStore) DeleteSeries(database string, sources influxql.Sources, condition influxql.Expr) error {
+	return s.DeleteSeriesFn(database, sources, condition)
+}
+
+// DefaultStoreExpandSourcesFn returns the original sources unchanged.
+func DefaultStoreExpandSourcesFn(sources influxql.Sources) (influxql.Sources, error) {
+	return sources, nil
+}
+
+// QueryExecutorMetaStore is a mockable implementation of QueryExecutor.MetaStore.
+type QueryExecutorMetaStore struct {
+	DatabaseFn            func(name string) (*meta.DatabaseInfo, error)
+	DatabasesFn           func() ([]meta.DatabaseInfo, error)
+	UserFn                func(name string) (*meta.UserInfo, error)
+	AdminUserExistsFn     func() (bool, error)
+	AuthenticateFn        func(username, password string) (*meta.UserInfo, error)
+	RetentionPolicyFn     func(database, name string) (rpi *meta.RetentionPolicyInfo, err error)
+	UserCountFn           func() (int, error)
+	ShardIDsByTimeRangeFn func(sources influxql.Sources, tmin, tmax time.Time) (a []uint64, err error)
+	NodeIDFn              func() uint64
+}
+
+func (s *QueryExecutorMetaStore) Database(name string) (*meta.DatabaseInfo, error) {
+	return s.DatabaseFn(name)
+}
+func (s *QueryExecutorMetaStore) Databases() ([]meta.DatabaseInfo, error) {
+	return s.DatabasesFn()
+}
+func (s *QueryExecutorMetaStore) User(name string) (*meta.UserInfo, error) {
+	return s.UserFn(name)
+}
+func (s *QueryExecutorMetaStore) AdminUserExists() (bool, error) {
+	return s.AdminUserExistsFn()
+}
+func (s *QueryExecutorMetaStore) Authenticate(username, password string) (*meta.UserInfo, error) {
+	return s.AuthenticateFn(username, password)
+}
+func (s *QueryExecutorMetaStore) RetentionPolicy(database, name string) (rpi *meta.RetentionPolicyInfo, err error) {
+	return s.RetentionPolicyFn(database, name)
+}
+func (s *QueryExecutorMetaStore) UserCount() (int, error) {
+	return s.UserCountFn()
+}
+func (s *QueryExecutorMetaStore) ShardIDsByTimeRange(sources influxql.Sources, tmin, tmax time.Time) (a []uint64, err error) {
+	return s.ShardIDsByTimeRangeFn(sources, tmin, tmax)
+}
+func (s *QueryExecutorMetaStore) NodeID() uint64 {
+	return s.NodeIDFn()
+}
+
+// MetaStoreDatabaseFoundFn always returns a database for a database name.
+func MetaStoreDatabaseFoundFn(name string) (*meta.DatabaseInfo, error) {
+	return &meta.DatabaseInfo{
+		Name: name,
+		DefaultRetentionPolicy: DefaultRetentionPolicy,
 	}, nil
 }
 
-func (t *testMetastore) Databases() ([]meta.DatabaseInfo, error) {
-	db, _ := t.Database("foo")
-	return []meta.DatabaseInfo{*db}, nil
+// StatementExecutor is a mockable implementation of QueryExecutor.StatementExecutor.
+type StatementExecutor struct {
+	ExecuteStatementFn func(stmt influxql.Statement) *influxql.Result
 }
 
-func (t *testMetastore) User(name string) (*meta.UserInfo, error) { return nil, nil }
-
-func (t *testMetastore) AdminUserExists() (bool, error) { return false, nil }
-
-func (t *testMetastore) Authenticate(username, password string) (*meta.UserInfo, error) {
-	return nil, nil
+func (e *StatementExecutor) ExecuteStatement(stmt influxql.Statement) *influxql.Result {
+	return e.ExecuteStatementFn(stmt)
 }
 
-func (t *testMetastore) RetentionPolicy(database, name string) (rpi *meta.RetentionPolicyInfo, err error) {
-	return &meta.RetentionPolicyInfo{
-		Name: "bar",
-		ShardGroups: []meta.ShardGroupInfo{
-			{
-				ID:        uint64(1),
-				StartTime: time.Now().Add(-time.Hour),
-				EndTime:   time.Now().Add(time.Hour),
-				Shards: []meta.ShardInfo{
-					{
-						ID:     uint64(1),
-						Owners: []meta.ShardOwner{{NodeID: 1}},
-					},
-				},
-			},
-		},
-	}, nil
+// IteratorCreator is a mockable implementation of SelectStatementExecutor.IteratorCreator.
+type IteratorCreator struct {
+	CreateIteratorFn  func(opt influxql.IteratorOptions) (influxql.Iterator, error)
+	FieldDimensionsFn func(sources influxql.Sources) (field, dimensions map[string]struct{}, err error)
 }
 
-func (t *testMetastore) UserCount() (int, error) {
-	return t.userCount, nil
+func (ic *IteratorCreator) CreateIterator(opt influxql.IteratorOptions) (influxql.Iterator, error) {
+	return ic.CreateIteratorFn(opt)
 }
 
-func (t *testMetastore) ShardGroupsByTimeRange(database, policy string, min, max time.Time) (a []meta.ShardGroupInfo, err error) {
-	return []meta.ShardGroupInfo{
-		{
-			ID:        sgID,
-			StartTime: time.Now().Add(-time.Hour),
-			EndTime:   time.Now().Add(time.Hour),
-			Shards: []meta.ShardInfo{
-				{
-					ID:     uint64(1),
-					Owners: []meta.ShardOwner{{NodeID: 1}},
-				},
-			},
-		},
-	}, nil
+func (ic *IteratorCreator) FieldDimensions(sources influxql.Sources) (field, dimensions map[string]struct{}, err error) {
+	return ic.FieldDimensionsFn(sources)
 }
 
-func (t *testMetastore) NodeID() uint64 {
-	return 1
+// IntoWriter is a mockable implementation of QueryExecutor.IntoWriter.
+type IntoWriter struct {
+	WritePointsIntoFn func(p *tsdb.IntoWriteRequest) error
 }
 
-type testShardMapper struct {
-	store *tsdb.Store
+func (w *IntoWriter) WritePointsInto(p *tsdb.IntoWriteRequest) error {
+	return w.WritePointsIntoFn(p)
 }
 
-func (t *testShardMapper) CreateMapper(shard meta.ShardInfo, stmt influxql.Statement, chunkSize int) (tsdb.Mapper, error) {
-	m, err := t.store.CreateMapper(shard.ID, stmt, chunkSize)
-	return m, err
+// FloatIterator is a test implementation of influxql.FloatIterator.
+type FloatIterator struct {
+	Points []influxql.FloatPoint
+}
+
+// Close is a no-op.
+func (itr *FloatIterator) Close() error { return nil }
+
+// Next returns the next value and shifts it off the beginning of the points slice.
+func (itr *FloatIterator) Next() *influxql.FloatPoint {
+	if len(itr.Points) == 0 {
+		return nil
+	}
+
+	v := &itr.Points[0]
+	itr.Points = itr.Points[1:]
+	return v
 }
 
 // MustParseQuery parses an InfluxQL query. Panic on error.
-func mustParseQuery(s string) *influxql.Query {
+func MustParseQuery(s string) *influxql.Query {
 	q, err := influxql.NewParser(strings.NewReader(s)).ParseQuery()
 	if err != nil {
 		panic(err.Error())
 	}
 	return q
+}
+
+// MustMarshalJSON marshals a value to a JSON string. Panic on error.
+func MustMarshalJSON(v interface{}) string {
+	buf, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(buf)
 }

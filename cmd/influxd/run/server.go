@@ -54,14 +54,14 @@ type Server struct {
 	BindAddress string
 	Listener    net.Listener
 
-	MetaStore     *meta.Store
-	TSDBStore     *tsdb.Store
-	QueryExecutor *tsdb.QueryExecutor
-	PointsWriter  *cluster.PointsWriter
-	ShardWriter   *cluster.ShardWriter
-	ShardMapper   *cluster.ShardMapper
-	HintedHandoff *hh.Service
-	Subscriber    *subscriber.Service
+	MetaStore       *meta.Store
+	TSDBStore       *tsdb.Store
+	QueryExecutor   *tsdb.QueryExecutor
+	PointsWriter    *cluster.PointsWriter
+	ShardWriter     *cluster.ShardWriter
+	IteratorCreator *cluster.IteratorCreator
+	HintedHandoff   *hh.Service
+	Subscriber      *subscriber.Service
 
 	Services []Service
 
@@ -109,17 +109,20 @@ func NewServer(c *Config, buildInfo *BuildInfo) (*Server, error) {
 	s.TSDBStore.EngineOptions.WALPartitionFlushDelay = time.Duration(c.Data.WALPartitionFlushDelay)
 
 	// Set the shard mapper
-	s.ShardMapper = cluster.NewShardMapper(time.Duration(c.Cluster.ShardMapperTimeout))
-	s.ShardMapper.ForceRemoteMapping = c.Cluster.ForceRemoteShardMapping
-	s.ShardMapper.MetaStore = s.MetaStore
-	s.ShardMapper.TSDBStore = s.TSDBStore
+	/*
+		s.IteratorCreator = cluster.NewIteratorCreator()
+		s.IteratorCreator.MetaStore = s.MetaStore
+		s.IteratorCreator.TSDBStore = s.TSDBStore
+		s.IteratorCreator.Timeout = time.Duration(c.Cluster.ShardQueryTimeout)
+		s.IteratorCreator.ForceRemoteMapping = c.Cluster.ForceRemoteShardMapping
+	*/
 
 	// Initialize query executor.
-	s.QueryExecutor = tsdb.NewQueryExecutor(s.TSDBStore)
+	s.QueryExecutor = tsdb.NewQueryExecutor()
+	s.QueryExecutor.Store = s.TSDBStore
 	s.QueryExecutor.MetaStore = s.MetaStore
 	s.QueryExecutor.MetaStatementExecutor = &meta.StatementExecutor{Store: s.MetaStore}
 	s.QueryExecutor.MonitorStatementExecutor = &monitor.StatementExecutor{Monitor: s.Monitor}
-	s.QueryExecutor.ShardMapper = s.ShardMapper
 	s.QueryExecutor.QueryLogEnabled = c.Data.QueryLogEnabled
 
 	// Set the shard writer
