@@ -23,14 +23,14 @@ func Select(stmt *SelectStatement, ic IteratorCreator) ([]Iterator, error) {
 		return nil, errors.New("cannot select fields when selecting multiple aggregates")
 	}
 
-	// Determine auxilary fields to be selected.
+	// Determine auxiliary fields to be selected.
 	opt.Aux = make([]string, 0, len(info.refs))
 	for ref := range info.refs {
 		opt.Aux = append(opt.Aux, ref.Val)
 	}
 	sort.Strings(opt.Aux)
 
-	// If there are multiple auxilary fields and no calls then construct an aux iterator.
+	// If there are multiple auxiliary fields and no calls then construct an aux iterator.
 	if len(info.calls) == 0 && len(info.refs) > 0 {
 		return buildAuxIterators(stmt.Fields, ic, opt)
 	}
@@ -38,9 +38,9 @@ func Select(stmt *SelectStatement, ic IteratorCreator) ([]Iterator, error) {
 	return buildExprIterators(stmt.Fields, ic, opt)
 }
 
-// buildAuxIterators creates a set of iterators from a single combined auxilary iterator.
+// buildAuxIterators creates a set of iterators from a single combined auxiliary iterator.
 func buildAuxIterators(fields Fields, ic IteratorCreator, opt IteratorOptions) ([]Iterator, error) {
-	// Create iteartor to read auxilary fields.
+	// Create iterator to read auxiliary fields.
 	input, err := ic.CreateIterator(opt)
 	if err != nil {
 		return nil, err
@@ -84,6 +84,19 @@ func buildExprIterators(fields Fields, ic IteratorCreator, opt IteratorOptions) 
 			if err != nil {
 				return err
 			}
+
+			if opt.Fill != NoFill {
+				if opt.Fill == NullFill {
+					if expr, ok := f.Expr.(*Call); ok && expr.Name == "count" {
+						switch itr.(type) {
+						case FloatIterator:
+							opt.Fill = NumberFill
+							opt.FillValue = 0.0
+						}
+					}
+				}
+				itr = NewFillIterator(itr, opt)
+			}
 			itrs = append(itrs, itr)
 		}
 		return nil
@@ -102,7 +115,6 @@ func buildExprIterators(fields Fields, ic IteratorCreator, opt IteratorOptions) 
 			itrs[i] = NewLimitIterator(itrs[i], opt)
 		}
 	}
-
 	return itrs, nil
 }
 

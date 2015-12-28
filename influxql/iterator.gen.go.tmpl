@@ -1,6 +1,7 @@
 package influxql
 
 import (
+	"fmt"
 	"math"
 	"container/heap"
 	"sort"
@@ -368,6 +369,78 @@ func (itr *{{.name}}LimitIterator) Next() *{{.Name}}Point {
 
 		return p
 	}
+}
+
+// {{.name}}FillIterator represents a fill iterator that processes {{.name}} values.
+type {{.name}}FillIterator struct {
+	name  string
+	input *buf{{.Name}}Iterator
+	prev  *{{.Name}}Point
+	next  int64
+	opt   IteratorOptions
+	fill  func (*{{.name}}FillIterator) {{.Type}}
+}
+
+func new{{.Name}}FillIterator(input {{.Name}}Iterator, opt IteratorOptions) *{{.name}}FillIterator {
+	measurement := opt.Sources[0].(*Measurement)
+	var fill func (*{{.name}}FillIterator) {{.Type}}
+	switch opt.Fill {
+	case NullFill:
+		fill = func (*{{.name}}FillIterator) {{.Type}} {
+			return {{.Nil}}
+		}
+	case NumberFill:
+		v, ok := opt.FillValue.({{.Type}})
+		if !ok {
+			panic(fmt.Sprintf("invalid fill value for type {{.Type}}: %T", opt.FillValue))
+		}
+		fill = func (*{{.name}}FillIterator) {{.Type}} {
+			return v
+		}
+	case PreviousFill:
+		fill = func (itr *{{.name}}FillIterator) {{.Type}} {
+			if itr.prev != nil {
+				return itr.prev.Value
+			}
+			return {{.Nil}}
+		}
+	default:
+		panic(fmt.Sprintf("unknown fill option: %T", opt.Fill))
+	}
+
+	return &{{.name}}FillIterator{
+		name:  measurement.Name,
+    input: newBuf{{.Name}}Iterator(input),
+		next:  opt.StartTime + int64(opt.Interval.Offset),
+		opt:   opt,
+		fill:  fill,
+	}
+}
+
+func (itr *{{.name}}FillIterator) Close() error { return itr.input.Close() }
+
+func (itr *{{.name}}FillIterator) Next() *{{.Name}}Point {
+	p := itr.input.Next()
+	if p != nil && p.Time <= itr.next {
+		if p.Time == itr.next {
+			itr.next += int64(itr.opt.Interval.Duration)
+		}
+		itr.prev = p
+		return p
+	}
+  itr.input.unread(p)
+
+	if itr.next > itr.opt.EndTime {
+		return nil
+	}
+
+	p = &{{.Name}}Point{
+		Name: itr.name,
+		Time: itr.next,
+		Value: itr.fill(itr),
+	}
+	itr.next += int64(itr.opt.Interval.Duration)
+	return p
 }
 
 // {{.name}}JoinIterator represents a join iterator that processes {{.name}} values.

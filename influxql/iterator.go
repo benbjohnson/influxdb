@@ -86,6 +86,20 @@ func NewLimitIterator(input Iterator, opt IteratorOptions) Iterator {
 	}
 }
 
+// NewFillIterator returns an iterator that fills missing intervals with a value.
+func NewFillIterator(input Iterator, opt IteratorOptions) Iterator {
+	if opt.Fill == NoFill {
+		return input
+	}
+
+	switch input := input.(type) {
+	case FloatIterator:
+		return newFloatFillIterator(input, opt)
+	default:
+		panic(fmt.Sprintf("unsupported fill iterator type: %T", input))
+	}
+}
+
 // Join combines inputs based on timestamp and returns new iterators.
 // The output iterators guarantee that one value will be output for every timestamp.
 func Join(inputs []Iterator) (outputs []Iterator) {
@@ -374,6 +388,10 @@ type IteratorOptions struct {
 	Interval   Interval
 	Dimensions []string
 
+	// Fill value options
+	Fill      FillOption
+	FillValue interface{}
+
 	// Condition to filter by.
 	Condition Expr
 
@@ -399,6 +417,8 @@ func newIteratorOptionsStmt(stmt *SelectStatement) (opt IteratorOptions, err err
 		return opt, err
 	}
 	opt.Interval.Duration = interval
+	opt.Fill = stmt.Fill
+	opt.FillValue = stmt.FillValue
 
 	// Determine dimensions.
 	for _, d := range stmt.Dimensions {

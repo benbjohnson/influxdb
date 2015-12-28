@@ -5,6 +5,7 @@ package influxql
 
 import (
 	"container/heap"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -368,6 +369,78 @@ func (itr *floatLimitIterator) Next() *FloatPoint {
 
 		return p
 	}
+}
+
+// floatFillIterator represents a fill iterator that processes float values.
+type floatFillIterator struct {
+	name  string
+	input *bufFloatIterator
+	prev  *FloatPoint
+	next  int64
+	opt   IteratorOptions
+	fill  func(*floatFillIterator) float64
+}
+
+func newFloatFillIterator(input FloatIterator, opt IteratorOptions) *floatFillIterator {
+	measurement := opt.Sources[0].(*Measurement)
+	var fill func(*floatFillIterator) float64
+	switch opt.Fill {
+	case NullFill:
+		fill = func(*floatFillIterator) float64 {
+			return math.NaN()
+		}
+	case NumberFill:
+		v, ok := opt.FillValue.(float64)
+		if !ok {
+			panic(fmt.Sprintf("invalid fill value for type float64: %T", opt.FillValue))
+		}
+		fill = func(*floatFillIterator) float64 {
+			return v
+		}
+	case PreviousFill:
+		fill = func(itr *floatFillIterator) float64 {
+			if itr.prev != nil {
+				return itr.prev.Value
+			}
+			return math.NaN()
+		}
+	default:
+		panic(fmt.Sprintf("unknown fill option: %T", opt.Fill))
+	}
+
+	return &floatFillIterator{
+		name:  measurement.Name,
+		input: newBufFloatIterator(input),
+		next:  opt.StartTime + int64(opt.Interval.Offset),
+		opt:   opt,
+		fill:  fill,
+	}
+}
+
+func (itr *floatFillIterator) Close() error { return itr.input.Close() }
+
+func (itr *floatFillIterator) Next() *FloatPoint {
+	p := itr.input.Next()
+	if p != nil && p.Time <= itr.next {
+		if p.Time == itr.next {
+			itr.next += int64(itr.opt.Interval.Duration)
+		}
+		itr.prev = p
+		return p
+	}
+	itr.input.unread(p)
+
+	if itr.next > itr.opt.EndTime {
+		return nil
+	}
+
+	p = &FloatPoint{
+		Name:  itr.name,
+		Time:  itr.next,
+		Value: itr.fill(itr),
+	}
+	itr.next += int64(itr.opt.Interval.Duration)
+	return p
 }
 
 // floatJoinIterator represents a join iterator that processes float values.
@@ -1019,6 +1092,78 @@ func (itr *stringLimitIterator) Next() *StringPoint {
 	}
 }
 
+// stringFillIterator represents a fill iterator that processes string values.
+type stringFillIterator struct {
+	name  string
+	input *bufStringIterator
+	prev  *StringPoint
+	next  int64
+	opt   IteratorOptions
+	fill  func(*stringFillIterator) string
+}
+
+func newStringFillIterator(input StringIterator, opt IteratorOptions) *stringFillIterator {
+	measurement := opt.Sources[0].(*Measurement)
+	var fill func(*stringFillIterator) string
+	switch opt.Fill {
+	case NullFill:
+		fill = func(*stringFillIterator) string {
+			return ""
+		}
+	case NumberFill:
+		v, ok := opt.FillValue.(string)
+		if !ok {
+			panic(fmt.Sprintf("invalid fill value for type string: %T", opt.FillValue))
+		}
+		fill = func(*stringFillIterator) string {
+			return v
+		}
+	case PreviousFill:
+		fill = func(itr *stringFillIterator) string {
+			if itr.prev != nil {
+				return itr.prev.Value
+			}
+			return ""
+		}
+	default:
+		panic(fmt.Sprintf("unknown fill option: %T", opt.Fill))
+	}
+
+	return &stringFillIterator{
+		name:  measurement.Name,
+		input: newBufStringIterator(input),
+		next:  opt.StartTime + int64(opt.Interval.Offset),
+		opt:   opt,
+		fill:  fill,
+	}
+}
+
+func (itr *stringFillIterator) Close() error { return itr.input.Close() }
+
+func (itr *stringFillIterator) Next() *StringPoint {
+	p := itr.input.Next()
+	if p != nil && p.Time <= itr.next {
+		if p.Time == itr.next {
+			itr.next += int64(itr.opt.Interval.Duration)
+		}
+		itr.prev = p
+		return p
+	}
+	itr.input.unread(p)
+
+	if itr.next > itr.opt.EndTime {
+		return nil
+	}
+
+	p = &StringPoint{
+		Name:  itr.name,
+		Time:  itr.next,
+		Value: itr.fill(itr),
+	}
+	itr.next += int64(itr.opt.Interval.Duration)
+	return p
+}
+
 // stringJoinIterator represents a join iterator that processes string values.
 type stringJoinIterator struct {
 	input StringIterator
@@ -1666,6 +1811,78 @@ func (itr *booleanLimitIterator) Next() *BooleanPoint {
 
 		return p
 	}
+}
+
+// booleanFillIterator represents a fill iterator that processes boolean values.
+type booleanFillIterator struct {
+	name  string
+	input *bufBooleanIterator
+	prev  *BooleanPoint
+	next  int64
+	opt   IteratorOptions
+	fill  func(*booleanFillIterator) bool
+}
+
+func newBooleanFillIterator(input BooleanIterator, opt IteratorOptions) *booleanFillIterator {
+	measurement := opt.Sources[0].(*Measurement)
+	var fill func(*booleanFillIterator) bool
+	switch opt.Fill {
+	case NullFill:
+		fill = func(*booleanFillIterator) bool {
+			return false
+		}
+	case NumberFill:
+		v, ok := opt.FillValue.(bool)
+		if !ok {
+			panic(fmt.Sprintf("invalid fill value for type bool: %T", opt.FillValue))
+		}
+		fill = func(*booleanFillIterator) bool {
+			return v
+		}
+	case PreviousFill:
+		fill = func(itr *booleanFillIterator) bool {
+			if itr.prev != nil {
+				return itr.prev.Value
+			}
+			return false
+		}
+	default:
+		panic(fmt.Sprintf("unknown fill option: %T", opt.Fill))
+	}
+
+	return &booleanFillIterator{
+		name:  measurement.Name,
+		input: newBufBooleanIterator(input),
+		next:  opt.StartTime + int64(opt.Interval.Offset),
+		opt:   opt,
+		fill:  fill,
+	}
+}
+
+func (itr *booleanFillIterator) Close() error { return itr.input.Close() }
+
+func (itr *booleanFillIterator) Next() *BooleanPoint {
+	p := itr.input.Next()
+	if p != nil && p.Time <= itr.next {
+		if p.Time == itr.next {
+			itr.next += int64(itr.opt.Interval.Duration)
+		}
+		itr.prev = p
+		return p
+	}
+	itr.input.unread(p)
+
+	if itr.next > itr.opt.EndTime {
+		return nil
+	}
+
+	p = &BooleanPoint{
+		Name:  itr.name,
+		Time:  itr.next,
+		Value: itr.fill(itr),
+	}
+	itr.next += int64(itr.opt.Interval.Duration)
+	return p
 }
 
 // booleanJoinIterator represents a join iterator that processes boolean values.
