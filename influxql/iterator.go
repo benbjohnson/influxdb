@@ -165,6 +165,7 @@ func (itrs joinIterators) iterators() []Iterator {
 // AuxIterator represents an iterator that can split off separate auxilary iterators.
 type AuxIterator interface {
 	Iterator
+	IteratorCreator
 
 	// Auxilary iterator
 	Iterator(name string) Iterator

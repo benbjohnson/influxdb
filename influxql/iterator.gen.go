@@ -5,6 +5,7 @@ package influxql
 
 import (
 	"container/heap"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -448,6 +449,24 @@ func (itr *floatAuxIterator) Close() error                  { return itr.input.C
 func (itr *floatAuxIterator) Next() *FloatPoint             { return <-itr.output }
 func (itr *floatAuxIterator) Iterator(name string) Iterator { return itr.fields.iterator(name) }
 
+func (itr *floatAuxIterator) CreateIterator(opt IteratorOptions) (Iterator, error) {
+	expr := opt.Expr
+	if expr == nil {
+		panic("unable to create an iterator with no expression from an aux iterator")
+	}
+
+	switch expr := expr.(type) {
+	case *VarRef:
+		return itr.fields.iterator(expr.Val), nil
+	default:
+		panic(fmt.Sprintf("invalid expression type for an aux iterator: %T", expr))
+	}
+}
+
+func (itr *floatAuxIterator) FieldDimensions(sources Sources) (fields, dimensions map[string]struct{}, err error) {
+	panic("not implemented")
+}
+
 func (itr *floatAuxIterator) stream() {
 	for {
 		// Read next point.
@@ -658,6 +677,54 @@ func (itr *floatReduceSliceIterator) reduce() []FloatPoint {
 
 // floatReduceSliceFunc is the function called by a FloatPoint slice reducer.
 type floatReduceSliceFunc func(a []FloatPoint, opt *reduceOptions) []FloatPoint
+
+// floatReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type floatTransformIterator struct {
+	input FloatIterator
+	fn    floatTransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *floatTransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *floatTransformIterator) Next() *FloatPoint {
+	p := itr.input.Next()
+	if p != nil {
+		p = itr.fn(p)
+	}
+	return p
+}
+
+// floatTransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type floatTransformFunc func(p *FloatPoint) *FloatPoint
+
+// floatReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type floatBoolTransformIterator struct {
+	input FloatIterator
+	fn    floatBoolTransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *floatBoolTransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *floatBoolTransformIterator) Next() *BooleanPoint {
+	p := itr.input.Next()
+	if p != nil {
+		return itr.fn(p)
+	}
+	return nil
+}
+
+// floatBoolTransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type floatBoolTransformFunc func(p *FloatPoint) *BooleanPoint
 
 // StringIterator represents a stream of string points.
 type StringIterator interface {
@@ -1097,6 +1164,24 @@ func (itr *stringAuxIterator) Close() error                  { return itr.input.
 func (itr *stringAuxIterator) Next() *StringPoint            { return <-itr.output }
 func (itr *stringAuxIterator) Iterator(name string) Iterator { return itr.fields.iterator(name) }
 
+func (itr *stringAuxIterator) CreateIterator(opt IteratorOptions) (Iterator, error) {
+	expr := opt.Expr
+	if expr == nil {
+		panic("unable to create an iterator with no expression from an aux iterator")
+	}
+
+	switch expr := expr.(type) {
+	case *VarRef:
+		return itr.fields.iterator(expr.Val), nil
+	default:
+		panic(fmt.Sprintf("invalid expression type for an aux iterator: %T", expr))
+	}
+}
+
+func (itr *stringAuxIterator) FieldDimensions(sources Sources) (fields, dimensions map[string]struct{}, err error) {
+	panic("not implemented")
+}
+
 func (itr *stringAuxIterator) stream() {
 	for {
 		// Read next point.
@@ -1307,6 +1392,54 @@ func (itr *stringReduceSliceIterator) reduce() []StringPoint {
 
 // stringReduceSliceFunc is the function called by a StringPoint slice reducer.
 type stringReduceSliceFunc func(a []StringPoint, opt *reduceOptions) []StringPoint
+
+// stringReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type stringTransformIterator struct {
+	input StringIterator
+	fn    stringTransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *stringTransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *stringTransformIterator) Next() *StringPoint {
+	p := itr.input.Next()
+	if p != nil {
+		p = itr.fn(p)
+	}
+	return p
+}
+
+// stringTransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type stringTransformFunc func(p *StringPoint) *StringPoint
+
+// stringReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type stringBoolTransformIterator struct {
+	input StringIterator
+	fn    stringBoolTransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *stringBoolTransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *stringBoolTransformIterator) Next() *BooleanPoint {
+	p := itr.input.Next()
+	if p != nil {
+		return itr.fn(p)
+	}
+	return nil
+}
+
+// stringBoolTransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type stringBoolTransformFunc func(p *StringPoint) *BooleanPoint
 
 // BooleanIterator represents a stream of boolean points.
 type BooleanIterator interface {
@@ -1746,6 +1879,24 @@ func (itr *booleanAuxIterator) Close() error                  { return itr.input
 func (itr *booleanAuxIterator) Next() *BooleanPoint           { return <-itr.output }
 func (itr *booleanAuxIterator) Iterator(name string) Iterator { return itr.fields.iterator(name) }
 
+func (itr *booleanAuxIterator) CreateIterator(opt IteratorOptions) (Iterator, error) {
+	expr := opt.Expr
+	if expr == nil {
+		panic("unable to create an iterator with no expression from an aux iterator")
+	}
+
+	switch expr := expr.(type) {
+	case *VarRef:
+		return itr.fields.iterator(expr.Val), nil
+	default:
+		panic(fmt.Sprintf("invalid expression type for an aux iterator: %T", expr))
+	}
+}
+
+func (itr *booleanAuxIterator) FieldDimensions(sources Sources) (fields, dimensions map[string]struct{}, err error) {
+	panic("not implemented")
+}
+
 func (itr *booleanAuxIterator) stream() {
 	for {
 		// Read next point.
@@ -1956,3 +2107,51 @@ func (itr *booleanReduceSliceIterator) reduce() []BooleanPoint {
 
 // booleanReduceSliceFunc is the function called by a BooleanPoint slice reducer.
 type booleanReduceSliceFunc func(a []BooleanPoint, opt *reduceOptions) []BooleanPoint
+
+// booleanReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type booleanTransformIterator struct {
+	input BooleanIterator
+	fn    booleanTransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *booleanTransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *booleanTransformIterator) Next() *BooleanPoint {
+	p := itr.input.Next()
+	if p != nil {
+		p = itr.fn(p)
+	}
+	return p
+}
+
+// booleanTransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type booleanTransformFunc func(p *BooleanPoint) *BooleanPoint
+
+// booleanReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type booleanBoolTransformIterator struct {
+	input BooleanIterator
+	fn    booleanBoolTransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *booleanBoolTransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *booleanBoolTransformIterator) Next() *BooleanPoint {
+	p := itr.input.Next()
+	if p != nil {
+		return itr.fn(p)
+	}
+	return nil
+}
+
+// booleanBoolTransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type booleanBoolTransformFunc func(p *BooleanPoint) *BooleanPoint

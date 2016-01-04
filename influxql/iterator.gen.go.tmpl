@@ -1,8 +1,9 @@
 package influxql
 
 import (
-	"math"
 	"container/heap"
+	"fmt"
+	"math"
 	"sort"
 	"sync"
 )
@@ -448,6 +449,24 @@ func (itr *{{.name}}AuxIterator) Close() error                  { return itr.inp
 func (itr *{{.name}}AuxIterator) Next() *{{.Name}}Point             { return <-itr.output }
 func (itr *{{.name}}AuxIterator) Iterator(name string) Iterator { return itr.fields.iterator(name) }
 
+func (itr *{{.name}}AuxIterator) CreateIterator(opt IteratorOptions) (Iterator, error) {
+	expr := opt.Expr
+	if expr == nil {
+		panic("unable to create an iterator with no expression from an aux iterator")
+	}
+
+	switch expr := expr.(type) {
+	case *VarRef:
+		return itr.fields.iterator(expr.Val), nil
+	default:
+		panic(fmt.Sprintf("invalid expression type for an aux iterator: %T", expr))
+	}
+}
+
+func (itr *{{.name}}AuxIterator) FieldDimensions(sources Sources) (fields, dimensions map[string]struct{}, err error) {
+	panic("not implemented")
+}
+
 func (itr *{{.name}}AuxIterator) stream() {
 	for {
 		// Read next point.
@@ -658,6 +677,54 @@ func (itr *{{.name}}ReduceSliceIterator) reduce() []{{.Name}}Point {
 
 // {{.name}}ReduceSliceFunc is the function called by a {{.Name}}Point slice reducer.
 type {{.name}}ReduceSliceFunc func(a []{{.Name}}Point, opt *reduceOptions) []{{.Name}}Point
+
+// {{.name}}ReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type {{.name}}TransformIterator struct {
+	input {{.Name}}Iterator
+	fn    {{.name}}TransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *{{.name}}TransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *{{.name}}TransformIterator) Next() *{{.Name}}Point {
+	p := itr.input.Next()
+	if p != nil {
+		p = itr.fn(p)
+	}
+	return p
+}
+
+// {{.name}}TransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type {{.name}}TransformFunc func(p *{{.Name}}Point) *{{.Name}}Point
+
+// {{.name}}ReduceIterator executes a function to modify an existing point for every
+// output of the input iterator.
+type {{.name}}BoolTransformIterator struct {
+	input {{.Name}}Iterator
+	fn    {{.name}}BoolTransformFunc
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *{{.name}}BoolTransformIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *{{.name}}BoolTransformIterator) Next() *BooleanPoint {
+	p := itr.input.Next()
+	if p != nil {
+		return itr.fn(p)
+	}
+	return nil
+}
+
+// {{.name}}BoolTransformFunc creates or modifies a point.
+// The point passed in may be modified and returned rather than allocating a
+// new point if possible.
+type {{.name}}BoolTransformFunc func(p *{{.Name}}Point) *BooleanPoint
 
 
 {{end}}
