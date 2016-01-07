@@ -40,7 +40,7 @@ func Select(stmt *SelectStatement, ic IteratorCreator) ([]Iterator, error) {
 
 // buildAuxIterators creates a set of iterators from a single combined auxilary iterator.
 func buildAuxIterators(fields Fields, ic IteratorCreator, opt IteratorOptions) ([]Iterator, error) {
-	// Create iteartor to read auxilary fields.
+	// Create iterator to read auxilary fields.
 	input, err := ic.CreateIterator(opt)
 	if err != nil {
 		return nil, err
@@ -81,20 +81,49 @@ func buildAuxIterators(fields Fields, ic IteratorCreator, opt IteratorOptions) (
 // buildExprIterators creates an iterator for each field expression.
 func buildExprIterators(fields Fields, ic IteratorCreator, opt IteratorOptions) ([]Iterator, error) {
 	// Create iterators from fields against the iterator creator.
-	itrs := make([]Iterator, 0, len(fields))
+	itrs := make([]Iterator, len(fields))
+
 	if err := func() error {
-		for _, f := range fields {
-			expr := Reduce(f.Expr, nil)
-			itr, err := buildExprIterator(expr, ic, opt)
+		hasAuxFields := false
+		var input Iterator
+		for i, f := range fields {
+			// Build iterators for calls first and save the iterator.
+			// We do this so we can keep the ordering provided by the user, but
+			// still build the Call's iterator first.
+			if _, ok := f.Expr.(*Call); !ok {
+				hasAuxFields = true
+				continue
+			}
+
+			itr, err := buildExprIterator(f.Expr, ic, opt)
 			if err != nil {
 				return err
 			}
-			itrs = append(itrs, itr)
+			itrs[i] = itr
+			input = itr
+		}
+
+		// Build the aux iterators. Previous validation should ensure that only one
+		// call was present so we build an AuxIterator from that input.
+		if hasAuxFields {
+			aitr := NewAuxIterator(input, opt)
+			for i, f := range fields {
+				if itrs[i] != nil {
+					itrs[i] = aitr
+					continue
+				}
+
+				itr, err := buildExprIterator(f.Expr, aitr, opt)
+				if err != nil {
+					return err
+				}
+				itrs[i] = itr
+			}
 		}
 		return nil
 
 	}(); err != nil {
-		Iterators(itrs).Close()
+		Iterators(Iterators(itrs).filterNonNil()).Close()
 		return nil, err
 	}
 

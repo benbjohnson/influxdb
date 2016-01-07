@@ -85,7 +85,7 @@ func newMinIterator(input Iterator, opt IteratorOptions) Iterator {
 // floatMinReduce returns the minimum value between prev & curr.
 func floatMinReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64, []interface{}) {
 	if prev == nil || curr.Value < prev.Value || (curr.Value == prev.Value && curr.Time < prev.Time) {
-		return curr.Time, curr.Value, curr.Aux
+		return opt.startTime, curr.Value, curr.Aux
 	}
 	return prev.Time, prev.Value, prev.Aux
 }
@@ -103,7 +103,7 @@ func newMaxIterator(input Iterator, opt IteratorOptions) Iterator {
 // floatMaxReduce returns the maximum value between prev & curr.
 func floatMaxReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64, []interface{}) {
 	if prev == nil || curr.Value > prev.Value || (curr.Value == prev.Value && curr.Time < prev.Time) {
-		return curr.Time, curr.Value, curr.Aux
+		return opt.startTime, curr.Value, curr.Aux
 	}
 	return prev.Time, prev.Value, prev.Aux
 }
