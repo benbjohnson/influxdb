@@ -201,7 +201,7 @@ func TestEncoding_BlockType(t *testing.T) {
 		blockType byte
 	}{
 		{value: float64(1.0), blockType: tsm1.BlockFloat64},
-		{value: int64(1), blockType: tsm1.BlockInt64},
+		{value: int64(1), blockType: tsm1.BlockInteger},
 		{value: true, blockType: tsm1.BlockBoolean},
 		{value: "string", blockType: tsm1.BlockString},
 	}
@@ -237,7 +237,7 @@ func TestEncoding_Count(t *testing.T) {
 		blockType byte
 	}{
 		{value: float64(1.0), blockType: tsm1.BlockFloat64},
-		{value: int64(1), blockType: tsm1.BlockInt64},
+		{value: int64(1), blockType: tsm1.BlockInteger},
 		{value: true, blockType: tsm1.BlockBoolean},
 		{value: "string", blockType: tsm1.BlockString},
 	}
@@ -338,7 +338,7 @@ func BenchmarkDecodeBlock_Float_TypeSpecific(b *testing.B) {
 	}
 }
 
-func BenchmarkDecodeBlock_Int64_Empty(b *testing.B) {
+func BenchmarkDecodeBlock_Integer_Empty(b *testing.B) {
 	valueCount := 1000
 	times := getTimes(valueCount, 60, time.Second)
 	values := make([]tsm1.Value, len(times))
@@ -361,7 +361,7 @@ func BenchmarkDecodeBlock_Int64_Empty(b *testing.B) {
 	}
 }
 
-func BenchmarkDecodeBlock_Int64_EqualSize(b *testing.B) {
+func BenchmarkDecodeBlock_Integer_EqualSize(b *testing.B) {
 	valueCount := 1000
 	times := getTimes(valueCount, 60, time.Second)
 	values := make([]tsm1.Value, len(times))
@@ -384,7 +384,7 @@ func BenchmarkDecodeBlock_Int64_EqualSize(b *testing.B) {
 	}
 }
 
-func BenchmarkDecodeBlock_Int64_TypeSpecific(b *testing.B) {
+func BenchmarkDecodeBlock_Integer_TypeSpecific(b *testing.B) {
 	valueCount := 1000
 	times := getTimes(valueCount, 60, time.Second)
 	values := make([]tsm1.Value, len(times))
@@ -397,13 +397,13 @@ func BenchmarkDecodeBlock_Int64_TypeSpecific(b *testing.B) {
 		b.Fatalf("unexpected error: %v", err)
 	}
 
-	decodedValues := make([]*tsm1.Int64Value, len(values))
+	decodedValues := make([]*tsm1.IntegerValue, len(values))
 	for i := 0; i < len(decodedValues); i++ {
-		decodedValues[i] = &tsm1.Int64Value{}
+		decodedValues[i] = &tsm1.IntegerValue{}
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err = tsm1.DecodeInt64Block(bytes, decodedValues)
+		_, err = tsm1.DecodeIntegerBlock(bytes, decodedValues)
 		if err != nil {
 			b.Fatalf("unexpected error decoding block: %v", err)
 		}
