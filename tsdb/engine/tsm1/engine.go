@@ -16,7 +16,7 @@ import (
 	"github.com/influxdb/influxdb/tsdb"
 )
 
-//go:generate tmpl -data=[{"Name":"Float","name":"float","Type":"float64","Nil":"math.NaN()"},{"Name":"String","name":"string","Type":"string","Nil":"\"\""},{"Name":"Boolean","name":"boolean","Type":"bool","Nil":"false"}] iterator.gen.go.tmpl
+//go:generate tmpl -data=@iterator.gen.go.tmpldata iterator.gen.go.tmpl
 
 func init() {
 	tsdb.RegisterEngine("tsm1", NewEngine)
@@ -771,6 +771,8 @@ func (e *Engine) createVarRefSeriesIterator(ref *influxql.VarRef, mm *tsdb.Measu
 	switch cur := cur.(type) {
 	case floatCursor:
 		return newFloatIterator(mm.Name, tags, itrOpt, cur, aux, conds, conditionFields), nil
+	case integerCursor:
+		return newIntegerIterator(mm.Name, tags, itrOpt, cur, aux, conds, conditionFields), nil
 	case stringCursor:
 		return newStringIterator(mm.Name, tags, itrOpt, cur, aux, conds, conditionFields), nil
 	case booleanCursor:
@@ -799,7 +801,7 @@ func (e *Engine) buildCursor(measurement, seriesKey, field string, opt influxql.
 	case influxql.Float:
 		return e.buildFloatCursor(measurement, seriesKey, field, opt)
 	case influxql.Integer:
-		panic("int support required")
+		return e.buildIntegerCursor(measurement, seriesKey, field, opt)
 	case influxql.String:
 		return e.buildStringCursor(measurement, seriesKey, field, opt)
 	case influxql.Boolean:
@@ -814,6 +816,13 @@ func (e *Engine) buildFloatCursor(measurement, seriesKey, field string, opt infl
 	cacheValues := e.Cache.Values(SeriesFieldKey(seriesKey, field))
 	keyCursor := e.KeyCursor(SeriesFieldKey(seriesKey, field), time.Unix(0, opt.SeekTime()).UTC(), opt.Ascending)
 	return newFloatCursor(opt.SeekTime(), opt.Ascending, cacheValues, keyCursor)
+}
+
+// buildIntegerCursor creates a cursor for an integer field.
+func (e *Engine) buildIntegerCursor(measurement, seriesKey, field string, opt influxql.IteratorOptions) integerCursor {
+	cacheValues := e.Cache.Values(SeriesFieldKey(seriesKey, field))
+	keyCursor := e.KeyCursor(SeriesFieldKey(seriesKey, field), time.Unix(0, opt.SeekTime()).UTC(), opt.Ascending)
+	return newIntegerCursor(opt.SeekTime(), opt.Ascending, cacheValues, keyCursor)
 }
 
 // buildStringCursor creates a cursor for a string field.
@@ -839,7 +848,7 @@ func tsmFieldTypeToInfluxQLDataType(typ byte) (influxql.DataType, error) {
 	switch typ {
 	case BlockFloat64:
 		return influxql.Float, nil
-	case BlockInt64:
+	case BlockInteger:
 		return influxql.Integer, nil
 	case BlockBoolean:
 		return influxql.Boolean, nil
