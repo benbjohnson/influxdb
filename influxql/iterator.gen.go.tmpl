@@ -3,7 +3,6 @@ package influxql
 import (
 	"container/heap"
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 )
@@ -14,17 +13,6 @@ import (
 type {{.Name}}Iterator interface {
 	Iterator
 	Next() *{{.Name}}Point
-}
-
-// {{.Name}}Iterators represents a list of {{.name}} iterators.
-type {{.Name}}Iterators []{{.Name}}Iterator
-
-// Close closes all iterators.
-func (a {{.Name}}Iterators) Close() error {
-	for _, itr := range a {
-		itr.Close()
-	}
-	return nil
 }
 
 // new{{.Name}}Iterators converts a slice of Iterator to a slice of {{.Name}}Iterator.
@@ -137,9 +125,9 @@ func new{{.Name}}MergeIterator(inputs []{{.Name}}Iterator, opt IteratorOptions) 
 }
 
 // Close closes the underlying iterators.
-func (itr *{{.name}}MergeIterator) Close() error { 
+func (itr *{{.name}}MergeIterator) Close() error {
 	for _, input := range itr.inputs {
-		return input.Close()
+		input.Close()
 	}
 	return nil
 }
@@ -162,7 +150,7 @@ func (itr *{{.name}}MergeIterator) Next() *{{.Name}}Point {
 
 		// Read the next point from the current iterator.
 		p := itr.curr.itr.Next()
-		
+
 		// If there are no more points then remove iterator from heap and find next.
 		if p == nil {
 			itr.curr = nil
@@ -196,24 +184,9 @@ func (h {{.name}}MergeHeap) Less(i, j int) bool {
 	yt, _ := h.opt.Window(y.Time)
 
 	if h.opt.Ascending {
-		if xt != yt {
-			return xt < yt
-		} else if x.Name != y.Name {
-			return x.Name < y.Name
-		} else if x.Tags.ID() != y.Tags.ID() {
-			return x.Tags.ID() < y.Tags.ID()
-		}
-		return x.Time < y.Time
+		return xt < yt
 	}
-
-	if xt != yt {
-		return xt > yt
-	} else if x.Name != y.Name {
-		return x.Name > y.Name
-	} else if x.Tags.ID() != y.Tags.ID() {
-		return x.Tags.ID() > y.Tags.ID()
-	} 
-	return x.Time > y.Time
+	return xt > yt
 }
 
 
@@ -395,56 +368,6 @@ func (itr *{{.name}}LimitIterator) Next() *{{.Name}}Point {
 	}
 }
 
-// {{.name}}JoinIterator represents a join iterator that processes {{.name}} values.
-type {{.name}}JoinIterator struct {
-	input {{.Name}}Iterator
-	buf   *{{.Name}}Point      // next value from input
-	c     chan *{{.Name}}Point // streaming output channel
-	once  sync.Once
-}
-
-// new{{.Name}}JoinIterator returns a new join iterator that wraps input.
-func new{{.Name}}JoinIterator(input {{.Name}}Iterator) *{{.name}}JoinIterator {
-	return &{{.name}}JoinIterator{
-		input: input,
-		c:     make(chan *{{.Name}}Point, 1),
-	}
-}
-
-// Close close the iterator.
-func (itr *{{.name}}JoinIterator) Close() error {
-	itr.once.Do(func() { close(itr.c) })
-	return nil
-}
-
-// Next returns the next point from the streaming channel.
-func (itr *{{.name}}JoinIterator) Next() *{{.Name}}Point { return <-itr.c }
-
-// loadBuf reads the next value from the input into the buffer.
-func (itr *{{.name}}JoinIterator) loadBuf() (t int64, name string, tags Tags) {
-	if itr.buf != nil {
-		return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-	}
-
-	itr.buf = itr.input.Next()
-	if itr.buf == nil {
-		return ZeroTime, "", Tags{}
-	}
-	return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-}
-
-// emitAt emits the buffered point if its timestamp equals t.
-// Otherwise it emits a null value with the timestamp t.
-func (itr *{{.name}}JoinIterator) emitAt(t int64, name string, tags Tags) {
-	var v *{{.Name}}Point
-	if itr.buf == nil || itr.buf.Time != t || itr.buf.Name != name || !itr.buf.Tags.Equals(&tags) {
-		v = &{{.Name}}Point{Name: name, Tags: tags, Time: t, Value: {{.Nil}}}
-	} else {
-		v, itr.buf = itr.buf, nil
-	}
-	itr.c <- v
-}
-
 // {{.name}}AuxIterator represents a {{.name}} implementation of AuxIterator.
 type {{.name}}AuxIterator struct {
 	input  *buf{{.Name}}Iterator
@@ -596,6 +519,11 @@ func (itr *{{.name}}ReduceIterator) reduce() []*{{.Name}}Point {
 	a := make([]*{{.Name}}Point, len(m))
 	for i, k := range keys {
 		a[i] = m[k]
+	}
+
+	// Set the time on each point to the beginning of the interval.
+	for _, p := range a {
+		p.Time = startTime
 	}
 
 	return a

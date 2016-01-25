@@ -6,7 +6,6 @@ package influxql
 import (
 	"container/heap"
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 )
@@ -15,17 +14,6 @@ import (
 type FloatIterator interface {
 	Iterator
 	Next() *FloatPoint
-}
-
-// FloatIterators represents a list of float iterators.
-type FloatIterators []FloatIterator
-
-// Close closes all iterators.
-func (a FloatIterators) Close() error {
-	for _, itr := range a {
-		itr.Close()
-	}
-	return nil
 }
 
 // newFloatIterators converts a slice of Iterator to a slice of FloatIterator.
@@ -139,7 +127,7 @@ func newFloatMergeIterator(inputs []FloatIterator, opt IteratorOptions) *floatMe
 // Close closes the underlying iterators.
 func (itr *floatMergeIterator) Close() error {
 	for _, input := range itr.inputs {
-		return input.Close()
+		input.Close()
 	}
 	return nil
 }
@@ -196,24 +184,9 @@ func (h floatMergeHeap) Less(i, j int) bool {
 	yt, _ := h.opt.Window(y.Time)
 
 	if h.opt.Ascending {
-		if xt != yt {
-			return xt < yt
-		} else if x.Name != y.Name {
-			return x.Name < y.Name
-		} else if x.Tags.ID() != y.Tags.ID() {
-			return x.Tags.ID() < y.Tags.ID()
-		}
-		return x.Time < y.Time
+		return xt < yt
 	}
-
-	if xt != yt {
-		return xt > yt
-	} else if x.Name != y.Name {
-		return x.Name > y.Name
-	} else if x.Tags.ID() != y.Tags.ID() {
-		return x.Tags.ID() > y.Tags.ID()
-	}
-	return x.Time > y.Time
+	return xt > yt
 }
 
 func (h *floatMergeHeap) Push(x interface{}) {
@@ -393,56 +366,6 @@ func (itr *floatLimitIterator) Next() *FloatPoint {
 	}
 }
 
-// floatJoinIterator represents a join iterator that processes float values.
-type floatJoinIterator struct {
-	input FloatIterator
-	buf   *FloatPoint      // next value from input
-	c     chan *FloatPoint // streaming output channel
-	once  sync.Once
-}
-
-// newFloatJoinIterator returns a new join iterator that wraps input.
-func newFloatJoinIterator(input FloatIterator) *floatJoinIterator {
-	return &floatJoinIterator{
-		input: input,
-		c:     make(chan *FloatPoint, 1),
-	}
-}
-
-// Close close the iterator.
-func (itr *floatJoinIterator) Close() error {
-	itr.once.Do(func() { close(itr.c) })
-	return nil
-}
-
-// Next returns the next point from the streaming channel.
-func (itr *floatJoinIterator) Next() *FloatPoint { return <-itr.c }
-
-// loadBuf reads the next value from the input into the buffer.
-func (itr *floatJoinIterator) loadBuf() (t int64, name string, tags Tags) {
-	if itr.buf != nil {
-		return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-	}
-
-	itr.buf = itr.input.Next()
-	if itr.buf == nil {
-		return ZeroTime, "", Tags{}
-	}
-	return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-}
-
-// emitAt emits the buffered point if its timestamp equals t.
-// Otherwise it emits a null value with the timestamp t.
-func (itr *floatJoinIterator) emitAt(t int64, name string, tags Tags) {
-	var v *FloatPoint
-	if itr.buf == nil || itr.buf.Time != t || itr.buf.Name != name || !itr.buf.Tags.Equals(&tags) {
-		v = &FloatPoint{Name: name, Tags: tags, Time: t, Value: math.NaN()}
-	} else {
-		v, itr.buf = itr.buf, nil
-	}
-	itr.c <- v
-}
-
 // floatAuxIterator represents a float implementation of AuxIterator.
 type floatAuxIterator struct {
 	input  *bufFloatIterator
@@ -594,6 +517,11 @@ func (itr *floatReduceIterator) reduce() []*FloatPoint {
 	a := make([]*FloatPoint, len(m))
 	for i, k := range keys {
 		a[i] = m[k]
+	}
+
+	// Set the time on each point to the beginning of the interval.
+	for _, p := range a {
+		p.Time = startTime
 	}
 
 	return a
@@ -754,17 +682,6 @@ type IntegerIterator interface {
 	Next() *IntegerPoint
 }
 
-// IntegerIterators represents a list of integer iterators.
-type IntegerIterators []IntegerIterator
-
-// Close closes all iterators.
-func (a IntegerIterators) Close() error {
-	for _, itr := range a {
-		itr.Close()
-	}
-	return nil
-}
-
 // newIntegerIterators converts a slice of Iterator to a slice of IntegerIterator.
 // Panic if any iterator in itrs is not a IntegerIterator.
 func newIntegerIterators(itrs []Iterator) []IntegerIterator {
@@ -876,7 +793,7 @@ func newIntegerMergeIterator(inputs []IntegerIterator, opt IteratorOptions) *int
 // Close closes the underlying iterators.
 func (itr *integerMergeIterator) Close() error {
 	for _, input := range itr.inputs {
-		return input.Close()
+		input.Close()
 	}
 	return nil
 }
@@ -933,24 +850,9 @@ func (h integerMergeHeap) Less(i, j int) bool {
 	yt, _ := h.opt.Window(y.Time)
 
 	if h.opt.Ascending {
-		if xt != yt {
-			return xt < yt
-		} else if x.Name != y.Name {
-			return x.Name < y.Name
-		} else if x.Tags.ID() != y.Tags.ID() {
-			return x.Tags.ID() < y.Tags.ID()
-		}
-		return x.Time < y.Time
+		return xt < yt
 	}
-
-	if xt != yt {
-		return xt > yt
-	} else if x.Name != y.Name {
-		return x.Name > y.Name
-	} else if x.Tags.ID() != y.Tags.ID() {
-		return x.Tags.ID() > y.Tags.ID()
-	}
-	return x.Time > y.Time
+	return xt > yt
 }
 
 func (h *integerMergeHeap) Push(x interface{}) {
@@ -1130,56 +1032,6 @@ func (itr *integerLimitIterator) Next() *IntegerPoint {
 	}
 }
 
-// integerJoinIterator represents a join iterator that processes integer values.
-type integerJoinIterator struct {
-	input IntegerIterator
-	buf   *IntegerPoint      // next value from input
-	c     chan *IntegerPoint // streaming output channel
-	once  sync.Once
-}
-
-// newIntegerJoinIterator returns a new join iterator that wraps input.
-func newIntegerJoinIterator(input IntegerIterator) *integerJoinIterator {
-	return &integerJoinIterator{
-		input: input,
-		c:     make(chan *IntegerPoint, 1),
-	}
-}
-
-// Close close the iterator.
-func (itr *integerJoinIterator) Close() error {
-	itr.once.Do(func() { close(itr.c) })
-	return nil
-}
-
-// Next returns the next point from the streaming channel.
-func (itr *integerJoinIterator) Next() *IntegerPoint { return <-itr.c }
-
-// loadBuf reads the next value from the input into the buffer.
-func (itr *integerJoinIterator) loadBuf() (t int64, name string, tags Tags) {
-	if itr.buf != nil {
-		return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-	}
-
-	itr.buf = itr.input.Next()
-	if itr.buf == nil {
-		return ZeroTime, "", Tags{}
-	}
-	return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-}
-
-// emitAt emits the buffered point if its timestamp equals t.
-// Otherwise it emits a null value with the timestamp t.
-func (itr *integerJoinIterator) emitAt(t int64, name string, tags Tags) {
-	var v *IntegerPoint
-	if itr.buf == nil || itr.buf.Time != t || itr.buf.Name != name || !itr.buf.Tags.Equals(&tags) {
-		v = &IntegerPoint{Name: name, Tags: tags, Time: t, Value: 0}
-	} else {
-		v, itr.buf = itr.buf, nil
-	}
-	itr.c <- v
-}
-
 // integerAuxIterator represents a integer implementation of AuxIterator.
 type integerAuxIterator struct {
 	input  *bufIntegerIterator
@@ -1331,6 +1183,11 @@ func (itr *integerReduceIterator) reduce() []*IntegerPoint {
 	a := make([]*IntegerPoint, len(m))
 	for i, k := range keys {
 		a[i] = m[k]
+	}
+
+	// Set the time on each point to the beginning of the interval.
+	for _, p := range a {
+		p.Time = startTime
 	}
 
 	return a
@@ -1491,17 +1348,6 @@ type StringIterator interface {
 	Next() *StringPoint
 }
 
-// StringIterators represents a list of string iterators.
-type StringIterators []StringIterator
-
-// Close closes all iterators.
-func (a StringIterators) Close() error {
-	for _, itr := range a {
-		itr.Close()
-	}
-	return nil
-}
-
 // newStringIterators converts a slice of Iterator to a slice of StringIterator.
 // Panic if any iterator in itrs is not a StringIterator.
 func newStringIterators(itrs []Iterator) []StringIterator {
@@ -1613,7 +1459,7 @@ func newStringMergeIterator(inputs []StringIterator, opt IteratorOptions) *strin
 // Close closes the underlying iterators.
 func (itr *stringMergeIterator) Close() error {
 	for _, input := range itr.inputs {
-		return input.Close()
+		input.Close()
 	}
 	return nil
 }
@@ -1670,24 +1516,9 @@ func (h stringMergeHeap) Less(i, j int) bool {
 	yt, _ := h.opt.Window(y.Time)
 
 	if h.opt.Ascending {
-		if xt != yt {
-			return xt < yt
-		} else if x.Name != y.Name {
-			return x.Name < y.Name
-		} else if x.Tags.ID() != y.Tags.ID() {
-			return x.Tags.ID() < y.Tags.ID()
-		}
-		return x.Time < y.Time
+		return xt < yt
 	}
-
-	if xt != yt {
-		return xt > yt
-	} else if x.Name != y.Name {
-		return x.Name > y.Name
-	} else if x.Tags.ID() != y.Tags.ID() {
-		return x.Tags.ID() > y.Tags.ID()
-	}
-	return x.Time > y.Time
+	return xt > yt
 }
 
 func (h *stringMergeHeap) Push(x interface{}) {
@@ -1867,56 +1698,6 @@ func (itr *stringLimitIterator) Next() *StringPoint {
 	}
 }
 
-// stringJoinIterator represents a join iterator that processes string values.
-type stringJoinIterator struct {
-	input StringIterator
-	buf   *StringPoint      // next value from input
-	c     chan *StringPoint // streaming output channel
-	once  sync.Once
-}
-
-// newStringJoinIterator returns a new join iterator that wraps input.
-func newStringJoinIterator(input StringIterator) *stringJoinIterator {
-	return &stringJoinIterator{
-		input: input,
-		c:     make(chan *StringPoint, 1),
-	}
-}
-
-// Close close the iterator.
-func (itr *stringJoinIterator) Close() error {
-	itr.once.Do(func() { close(itr.c) })
-	return nil
-}
-
-// Next returns the next point from the streaming channel.
-func (itr *stringJoinIterator) Next() *StringPoint { return <-itr.c }
-
-// loadBuf reads the next value from the input into the buffer.
-func (itr *stringJoinIterator) loadBuf() (t int64, name string, tags Tags) {
-	if itr.buf != nil {
-		return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-	}
-
-	itr.buf = itr.input.Next()
-	if itr.buf == nil {
-		return ZeroTime, "", Tags{}
-	}
-	return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-}
-
-// emitAt emits the buffered point if its timestamp equals t.
-// Otherwise it emits a null value with the timestamp t.
-func (itr *stringJoinIterator) emitAt(t int64, name string, tags Tags) {
-	var v *StringPoint
-	if itr.buf == nil || itr.buf.Time != t || itr.buf.Name != name || !itr.buf.Tags.Equals(&tags) {
-		v = &StringPoint{Name: name, Tags: tags, Time: t, Value: ""}
-	} else {
-		v, itr.buf = itr.buf, nil
-	}
-	itr.c <- v
-}
-
 // stringAuxIterator represents a string implementation of AuxIterator.
 type stringAuxIterator struct {
 	input  *bufStringIterator
@@ -2068,6 +1849,11 @@ func (itr *stringReduceIterator) reduce() []*StringPoint {
 	a := make([]*StringPoint, len(m))
 	for i, k := range keys {
 		a[i] = m[k]
+	}
+
+	// Set the time on each point to the beginning of the interval.
+	for _, p := range a {
+		p.Time = startTime
 	}
 
 	return a
@@ -2228,17 +2014,6 @@ type BooleanIterator interface {
 	Next() *BooleanPoint
 }
 
-// BooleanIterators represents a list of boolean iterators.
-type BooleanIterators []BooleanIterator
-
-// Close closes all iterators.
-func (a BooleanIterators) Close() error {
-	for _, itr := range a {
-		itr.Close()
-	}
-	return nil
-}
-
 // newBooleanIterators converts a slice of Iterator to a slice of BooleanIterator.
 // Panic if any iterator in itrs is not a BooleanIterator.
 func newBooleanIterators(itrs []Iterator) []BooleanIterator {
@@ -2350,7 +2125,7 @@ func newBooleanMergeIterator(inputs []BooleanIterator, opt IteratorOptions) *boo
 // Close closes the underlying iterators.
 func (itr *booleanMergeIterator) Close() error {
 	for _, input := range itr.inputs {
-		return input.Close()
+		input.Close()
 	}
 	return nil
 }
@@ -2407,24 +2182,9 @@ func (h booleanMergeHeap) Less(i, j int) bool {
 	yt, _ := h.opt.Window(y.Time)
 
 	if h.opt.Ascending {
-		if xt != yt {
-			return xt < yt
-		} else if x.Name != y.Name {
-			return x.Name < y.Name
-		} else if x.Tags.ID() != y.Tags.ID() {
-			return x.Tags.ID() < y.Tags.ID()
-		}
-		return x.Time < y.Time
+		return xt < yt
 	}
-
-	if xt != yt {
-		return xt > yt
-	} else if x.Name != y.Name {
-		return x.Name > y.Name
-	} else if x.Tags.ID() != y.Tags.ID() {
-		return x.Tags.ID() > y.Tags.ID()
-	}
-	return x.Time > y.Time
+	return xt > yt
 }
 
 func (h *booleanMergeHeap) Push(x interface{}) {
@@ -2604,56 +2364,6 @@ func (itr *booleanLimitIterator) Next() *BooleanPoint {
 	}
 }
 
-// booleanJoinIterator represents a join iterator that processes boolean values.
-type booleanJoinIterator struct {
-	input BooleanIterator
-	buf   *BooleanPoint      // next value from input
-	c     chan *BooleanPoint // streaming output channel
-	once  sync.Once
-}
-
-// newBooleanJoinIterator returns a new join iterator that wraps input.
-func newBooleanJoinIterator(input BooleanIterator) *booleanJoinIterator {
-	return &booleanJoinIterator{
-		input: input,
-		c:     make(chan *BooleanPoint, 1),
-	}
-}
-
-// Close close the iterator.
-func (itr *booleanJoinIterator) Close() error {
-	itr.once.Do(func() { close(itr.c) })
-	return nil
-}
-
-// Next returns the next point from the streaming channel.
-func (itr *booleanJoinIterator) Next() *BooleanPoint { return <-itr.c }
-
-// loadBuf reads the next value from the input into the buffer.
-func (itr *booleanJoinIterator) loadBuf() (t int64, name string, tags Tags) {
-	if itr.buf != nil {
-		return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-	}
-
-	itr.buf = itr.input.Next()
-	if itr.buf == nil {
-		return ZeroTime, "", Tags{}
-	}
-	return itr.buf.Time, itr.buf.Name, itr.buf.Tags
-}
-
-// emitAt emits the buffered point if its timestamp equals t.
-// Otherwise it emits a null value with the timestamp t.
-func (itr *booleanJoinIterator) emitAt(t int64, name string, tags Tags) {
-	var v *BooleanPoint
-	if itr.buf == nil || itr.buf.Time != t || itr.buf.Name != name || !itr.buf.Tags.Equals(&tags) {
-		v = &BooleanPoint{Name: name, Tags: tags, Time: t, Value: false}
-	} else {
-		v, itr.buf = itr.buf, nil
-	}
-	itr.c <- v
-}
-
 // booleanAuxIterator represents a boolean implementation of AuxIterator.
 type booleanAuxIterator struct {
 	input  *bufBooleanIterator
@@ -2805,6 +2515,11 @@ func (itr *booleanReduceIterator) reduce() []*BooleanPoint {
 	a := make([]*BooleanPoint, len(m))
 	for i, k := range keys {
 		a[i] = m[k]
+	}
+
+	// Set the time on each point to the beginning of the interval.
+	for _, p := range a {
+		p.Time = startTime
 	}
 
 	return a

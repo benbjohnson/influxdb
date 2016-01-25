@@ -98,7 +98,7 @@ func newMinIterator(input Iterator, opt IteratorOptions) Iterator {
 // floatMinReduce returns the minimum value between prev & curr.
 func floatMinReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64, []interface{}) {
 	if prev == nil || curr.Value < prev.Value || (curr.Value == prev.Value && curr.Time < prev.Time) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
 	return prev.Time, prev.Value, prev.Aux
 }
@@ -106,7 +106,7 @@ func floatMinReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64,
 // integerMinReduce returns the minimum value between prev & curr.
 func integerMinReduce(prev, curr *IntegerPoint, opt *reduceOptions) (int64, int64, []interface{}) {
 	if prev == nil || curr.Value < prev.Value || (curr.Value == prev.Value && curr.Time < prev.Time) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
 	return prev.Time, prev.Value, prev.Aux
 }
@@ -126,7 +126,7 @@ func newMaxIterator(input Iterator, opt IteratorOptions) Iterator {
 // floatMaxReduce returns the maximum value between prev & curr.
 func floatMaxReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64, []interface{}) {
 	if prev == nil || curr.Value > prev.Value || (curr.Value == prev.Value && curr.Time < prev.Time) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
 	return prev.Time, prev.Value, prev.Aux
 }
@@ -134,7 +134,7 @@ func floatMaxReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64,
 // integerMaxReduce returns the maximum value between prev & curr.
 func integerMaxReduce(prev, curr *IntegerPoint, opt *reduceOptions) (int64, int64, []interface{}) {
 	if prev == nil || curr.Value > prev.Value || (curr.Value == prev.Value && curr.Time < prev.Time) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
 	return prev.Time, prev.Value, prev.Aux
 }
@@ -154,17 +154,17 @@ func newSumIterator(input Iterator, opt IteratorOptions) Iterator {
 // floatSumReduce returns the sum prev value & curr value.
 func floatSumReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64, []interface{}) {
 	if prev == nil {
-		return opt.startTime, curr.Value, nil
+		return curr.Time, curr.Value, nil
 	}
-	return opt.startTime, prev.Value + curr.Value, nil
+	return prev.Time, prev.Value + curr.Value, nil
 }
 
 // integerSumReduce returns the sum prev value & curr value.
 func integerSumReduce(prev, curr *IntegerPoint, opt *reduceOptions) (int64, int64, []interface{}) {
 	if prev == nil {
-		return opt.startTime, curr.Value, nil
+		return curr.Time, curr.Value, nil
 	}
-	return opt.startTime, prev.Value + curr.Value, nil
+	return prev.Time, prev.Value + curr.Value, nil
 }
 
 // newFirstIterator returns an iterator for operating on a first() call.
@@ -182,17 +182,17 @@ func newFirstIterator(input Iterator, opt IteratorOptions) Iterator {
 // floatFirstReduce returns the first point sorted by time.
 func floatFirstReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64, []interface{}) {
 	if prev == nil || curr.Time < prev.Time || (curr.Time == prev.Time && curr.Value > prev.Value) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
-	return opt.startTime, prev.Value, prev.Aux
+	return prev.Time, prev.Value, prev.Aux
 }
 
 // integerFirstReduce returns the first point sorted by time.
 func integerFirstReduce(prev, curr *IntegerPoint, opt *reduceOptions) (int64, int64, []interface{}) {
 	if prev == nil || curr.Time < prev.Time || (curr.Time == prev.Time && curr.Value > prev.Value) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
-	return opt.startTime, prev.Value, prev.Aux
+	return prev.Time, prev.Value, prev.Aux
 }
 
 // newLastIterator returns an iterator for operating on a last() call.
@@ -210,17 +210,17 @@ func newLastIterator(input Iterator, opt IteratorOptions) Iterator {
 // floatLastReduce returns the last point sorted by time.
 func floatLastReduce(prev, curr *FloatPoint, opt *reduceOptions) (int64, float64, []interface{}) {
 	if prev == nil || curr.Time > prev.Time || (curr.Time == prev.Time && curr.Value > prev.Value) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
-	return opt.startTime, prev.Value, prev.Aux
+	return prev.Time, prev.Value, prev.Aux
 }
 
 // integerLastReduce returns the last point sorted by time.
 func integerLastReduce(prev, curr *IntegerPoint, opt *reduceOptions) (int64, int64, []interface{}) {
 	if prev == nil || curr.Time > prev.Time || (curr.Time == prev.Time && curr.Value > prev.Value) {
-		return opt.startTime, curr.Value, curr.Aux
+		return curr.Time, curr.Value, curr.Aux
 	}
-	return opt.startTime, prev.Value, prev.Aux
+	return prev.Time, prev.Value, prev.Aux
 }
 
 // newDistinctIterator returns an iterator for operating on a distinct() call.
@@ -709,3 +709,102 @@ func newFloatDerivativeReduceSliceFunc(interval Interval, isNonNegative bool) fl
 		return output
 	}
 }
+
+// integerReduceSliceFloatIterator executes a reducer on all points in a window and buffers the result.
+// This iterator receives an integer iterator but produces a float iterator.
+type integerReduceSliceFloatIterator struct {
+	input  *bufIntegerIterator
+	fn     integerReduceSliceFloatFunc
+	opt    IteratorOptions
+	points []FloatPoint
+}
+
+// Close closes the iterator and all child iterators.
+func (itr *integerReduceSliceFloatIterator) Close() error { return itr.input.Close() }
+
+// Next returns the minimum value for the next available interval.
+func (itr *integerReduceSliceFloatIterator) Next() *FloatPoint {
+	// Calculate next window if we have no more points.
+	if len(itr.points) == 0 {
+		itr.points = itr.reduce()
+		if len(itr.points) == 0 {
+			return nil
+		}
+	}
+
+	// Pop next point off the stack.
+	p := itr.points[len(itr.points)-1]
+	itr.points = itr.points[:len(itr.points)-1]
+	return &p
+}
+
+// reduce executes fn once for every point in the next window.
+// The previous value for the dimension is passed to fn.
+func (itr *integerReduceSliceFloatIterator) reduce() []FloatPoint {
+	// Calculate next window.
+	startTime, endTime := itr.opt.Window(itr.input.peekTime())
+
+	var reduceOptions = reduceOptions{
+		startTime: startTime,
+		endTime:   endTime,
+	}
+
+	// Group points by name and tagset.
+	groups := make(map[string]struct {
+		name   string
+		tags   Tags
+		points []IntegerPoint
+	})
+	for {
+		// Read next point.
+		p := itr.input.NextInWindow(startTime, endTime)
+		if p == nil {
+			break
+		}
+		tags := p.Tags.Subset(itr.opt.Dimensions)
+
+		// Append point to dimension.
+		id := tags.ID()
+		g := groups[id]
+		g.name = p.Name
+		g.tags = tags
+		g.points = append(g.points, *p)
+		groups[id] = g
+	}
+
+	// Reduce each set into a set of values.
+	results := make(map[string][]FloatPoint)
+	for key, g := range groups {
+		a := itr.fn(g.points, &reduceOptions)
+		if len(a) == 0 {
+			continue
+		}
+
+		// Update name and tags for each returned point.
+		for i := range a {
+			a[i].Name = g.name
+			a[i].Tags = g.tags
+		}
+		results[key] = a
+	}
+
+	// Reverse sort points by name & tag.
+	keys := make([]string, 0, len(results))
+	for k := range results {
+		keys = append(keys, k)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(keys)))
+
+	// Reverse order points within each key.
+	a := make([]FloatPoint, 0, len(results))
+	for _, k := range keys {
+		for i := len(results[k]) - 1; i >= 0; i-- {
+			a = append(a, results[k][i])
+		}
+	}
+
+	return a
+}
+
+// integerReduceSliceFloatFunc is the function called by a IntegerPoint slice reducer that emits FloatPoint.
+type integerReduceSliceFloatFunc func(a []IntegerPoint, opt *reduceOptions) []FloatPoint
