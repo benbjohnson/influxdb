@@ -564,6 +564,8 @@ func (itr *floatReduceIterator) reduce() []*FloatPoint {
 		curr := itr.input.NextInWindow(startTime, endTime)
 		if curr == nil {
 			break
+		} else if curr.Nil {
+			continue
 		}
 		tags := curr.Tags.Subset(itr.opt.Dimensions)
 
@@ -651,6 +653,8 @@ func (itr *floatReduceSliceIterator) reduce() []FloatPoint {
 		p := itr.input.NextInWindow(startTime, endTime)
 		if p == nil {
 			break
+		} else if p.Nil {
+			continue
 		}
 		tags := p.Tags.Subset(itr.opt.Dimensions)
 
@@ -1301,6 +1305,8 @@ func (itr *integerReduceIterator) reduce() []*IntegerPoint {
 		curr := itr.input.NextInWindow(startTime, endTime)
 		if curr == nil {
 			break
+		} else if curr.Nil {
+			continue
 		}
 		tags := curr.Tags.Subset(itr.opt.Dimensions)
 
@@ -1388,6 +1394,8 @@ func (itr *integerReduceSliceIterator) reduce() []IntegerPoint {
 		p := itr.input.NextInWindow(startTime, endTime)
 		if p == nil {
 			break
+		} else if p.Nil {
+			continue
 		}
 		tags := p.Tags.Subset(itr.opt.Dimensions)
 
@@ -2038,6 +2046,8 @@ func (itr *stringReduceIterator) reduce() []*StringPoint {
 		curr := itr.input.NextInWindow(startTime, endTime)
 		if curr == nil {
 			break
+		} else if curr.Nil {
+			continue
 		}
 		tags := curr.Tags.Subset(itr.opt.Dimensions)
 
@@ -2125,6 +2135,8 @@ func (itr *stringReduceSliceIterator) reduce() []StringPoint {
 		p := itr.input.NextInWindow(startTime, endTime)
 		if p == nil {
 			break
+		} else if p.Nil {
+			continue
 		}
 		tags := p.Tags.Subset(itr.opt.Dimensions)
 
@@ -2775,6 +2787,8 @@ func (itr *booleanReduceIterator) reduce() []*BooleanPoint {
 		curr := itr.input.NextInWindow(startTime, endTime)
 		if curr == nil {
 			break
+		} else if curr.Nil {
+			continue
 		}
 		tags := curr.Tags.Subset(itr.opt.Dimensions)
 
@@ -2862,6 +2876,8 @@ func (itr *booleanReduceSliceIterator) reduce() []BooleanPoint {
 		p := itr.input.NextInWindow(startTime, endTime)
 		if p == nil {
 			break
+		} else if p.Nil {
+			continue
 		}
 		tags := p.Tags.Subset(itr.opt.Dimensions)
 
