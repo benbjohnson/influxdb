@@ -17,11 +17,11 @@ func (v *{{.Name}}Point) name() string       { return v.Name }
 func (v *{{.Name}}Point) tags() Tags         { return v.Tags }
 func (v *{{.Name}}Point) time() int64        { return v.Time }
 func (v *{{.Name}}Point) nil() bool          { return v.Nil }
-func (v *{{.Name}}Point) value() interface{} { 
+func (v *{{.Name}}Point) value() interface{} {
 	if v.Nil {
 		return nil
 	}
-	return v.Value 
+	return v.Value
 }
 func (v *{{.Name}}Point) aux() []interface{} { return v.Aux }
 
@@ -57,5 +57,32 @@ func (a {{.name}}PointsByValue) Less(i, j int) bool { return !a[i].Value }
 func (a {{.name}}PointsByValue) Less(i, j int) bool { return a[i].Value < a[j].Value }
 {{end}}
 func (a {{.name}}PointsByValue) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
+// {{.name}}PointByFunc represents a slice of points sortable by a function.
+type {{.name}}PointsByFunc struct {
+	points []{{.Name}}Point
+	cmp    func(a, b *{{.Name}}Point) bool
+}
+
+func (a *{{.name}}PointsByFunc) Len() int           { return len(a.points) }
+func (a *{{.name}}PointsByFunc) Less(i, j int) bool { return a.cmp(&a.points[i], &a.points[j]) }
+func (a *{{.name}}PointsByFunc) Swap(i, j int)      { a.points[i], a.points[j] = a.points[j], a.points[i] }
+
+func (a *{{.name}}PointsByFunc) Push(x interface{}) {
+	a.points = append(a.points, x.({{.Name}}Point))
+}
+
+func (a *{{.name}}PointsByFunc) Pop() interface{} {
+	p := a.points[len(a.points)-1]
+	a.points = a.points[:len(a.points)-1]
+	return p
+}
+
+func {{.name}}PointsSortBy(points []{{.Name}}Point, cmp func(a, b *{{.Name}}Point) bool) *{{.name}}PointsByFunc {
+	return &{{.name}}PointsByFunc{
+		points: points,
+		cmp: cmp,
+	}
+}
 
 {{end}}

@@ -5,8 +5,120 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/influxdb/influxdb/influxql"
+	"github.com/influxdb/influxdb/pkg/deep"
 )
+
+func TestPoint_Clone_Float(t *testing.T) {
+	p := &influxql.FloatPoint{
+		Name:  "cpu",
+		Tags:  ParseTags("host=server01"),
+		Time:  5,
+		Value: 2,
+		Aux:   []interface{}{float64(45)},
+	}
+	c := p.Clone()
+	if p == c {
+		t.Errorf("clone has the same address as the original: %v == %v", p, c)
+	}
+	if !deep.Equal(p, c) {
+		t.Errorf("mismatched point: %s", spew.Sdump(c))
+	}
+	if &p.Aux[0] == &c.Aux[0] {
+		t.Errorf("aux values share the same address: %v == %v", p.Aux, c.Aux)
+	} else if !deep.Equal(p.Aux, c.Aux) {
+		t.Errorf("mismatched aux fields: %v != %v", p.Aux, c.Aux)
+	}
+}
+
+func TestPoint_Clone_Integer(t *testing.T) {
+	p := &influxql.IntegerPoint{
+		Name:  "cpu",
+		Tags:  ParseTags("host=server01"),
+		Time:  5,
+		Value: 2,
+		Aux:   []interface{}{float64(45)},
+	}
+	c := p.Clone()
+	if p == c {
+		t.Errorf("clone has the same address as the original: %v == %v", p, c)
+	}
+	if !deep.Equal(p, c) {
+		t.Errorf("mismatched point: %s", spew.Sdump(c))
+	}
+	if &p.Aux[0] == &c.Aux[0] {
+		t.Errorf("aux values share the same address: %v == %v", p.Aux, c.Aux)
+	} else if !deep.Equal(p.Aux, c.Aux) {
+		t.Errorf("mismatched aux fields: %v != %v", p.Aux, c.Aux)
+	}
+}
+
+func TestPoint_Clone_String(t *testing.T) {
+	p := &influxql.StringPoint{
+		Name:  "cpu",
+		Tags:  ParseTags("host=server01"),
+		Time:  5,
+		Value: "clone",
+		Aux:   []interface{}{float64(45)},
+	}
+	c := p.Clone()
+	if p == c {
+		t.Errorf("clone has the same address as the original: %v == %v", p, c)
+	}
+	if !deep.Equal(p, c) {
+		t.Errorf("mismatched point: %s", spew.Sdump(c))
+	}
+	if &p.Aux[0] == &c.Aux[0] {
+		t.Errorf("aux values share the same address: %v == %v", p.Aux, c.Aux)
+	} else if !deep.Equal(p.Aux, c.Aux) {
+		t.Errorf("mismatched aux fields: %v != %v", p.Aux, c.Aux)
+	}
+}
+
+func TestPoint_Clone_Boolean(t *testing.T) {
+	p := &influxql.BooleanPoint{
+		Name:  "cpu",
+		Tags:  ParseTags("host=server01"),
+		Time:  5,
+		Value: true,
+		Aux:   []interface{}{float64(45)},
+	}
+	c := p.Clone()
+	if p == c {
+		t.Errorf("clone has the same address as the original: %v == %v", p, c)
+	}
+	if !deep.Equal(p, c) {
+		t.Errorf("mismatched point: %s", spew.Sdump(c))
+	}
+	if &p.Aux[0] == &c.Aux[0] {
+		t.Errorf("aux values share the same address: %v == %v", p.Aux, c.Aux)
+	} else if !deep.Equal(p.Aux, c.Aux) {
+		t.Errorf("mismatched aux fields: %v != %v", p.Aux, c.Aux)
+	}
+}
+
+func TestPoint_Clone_Nil(t *testing.T) {
+	var fp *influxql.FloatPoint
+	if p := fp.Clone(); p != nil {
+		t.Errorf("expected nil, got %v", p)
+	}
+
+	var ip *influxql.IntegerPoint
+	if p := ip.Clone(); p != nil {
+		t.Errorf("expected nil, got %v", p)
+	}
+
+	var sp *influxql.StringPoint
+	if p := sp.Clone(); p != nil {
+		t.Errorf("expected nil, got %v", p)
+	}
+
+	var bp *influxql.BooleanPoint
+	if p := bp.Clone(); p != nil {
+		t.Errorf("expected nil, got %v", p)
+	}
+}
 
 // Ensure that tags can return a unique id.
 func TestTags_ID(t *testing.T) {
