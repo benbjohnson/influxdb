@@ -280,6 +280,7 @@ func (q *QueryExecutor) PlanSelect(stmt *influxql.SelectStatement, chunkSize int
 	// Generate a row emitter from the iterator set.
 	em := influxql.NewEmitter(itrs, stmt.TimeAscending())
 	em.Columns = stmt.ColumnNames()
+	em.OmitTime = stmt.OmitTime
 
 	// Wrap emitter in an adapter to conform to the Executor interface.
 	return (*emitterExecutor)(em), nil
@@ -537,35 +538,44 @@ func (q *QueryExecutor) planShowMeasurements(stmt *influxql.ShowMeasurementsStat
 		return nil, errors.New("SHOW MEASUREMENTS doesn't support time in WHERE clause")
 	}
 
-	panic("FIXME: Implement SHOW MEASUREMENTS")
-	/*
-		// Get the database info.
-		di, err := q.MetaClient.Database(database)
-		if err != nil {
-			return nil, err
-		} else if di == nil {
-			return nil, ErrDatabaseNotFound(database)
+	condition := stmt.Condition
+	if source, ok := stmt.Source.(*influxql.Measurement); ok {
+		var expr influxql.Expr
+		if source.Regex != nil {
+			expr = &influxql.BinaryExpr{
+				Op:  influxql.EQREGEX,
+				LHS: &influxql.VarRef{Val: "name"},
+				RHS: &influxql.RegexLiteral{Val: source.Regex.Val},
+			}
+		} else if source.Name != "" {
+			expr = &influxql.BinaryExpr{
+				Op:  influxql.EQ,
+				LHS: &influxql.VarRef{Val: "name"},
+				RHS: &influxql.StringLiteral{Val: source.Name},
+			}
 		}
 
-		// Get info for all shards in the database.
-		shards := di.ShardInfos()
-
-		// Build the Mappers, one per shard.
-		mappers := []Mapper{}
-		for _, sh := range shards {
-			m, err := q.ShardMapper.CreateMapper(sh, stmt, chunkSize)
-			if err != nil {
-				return nil, err
-			}
-			if m == nil {
-				// No data for this shard, skip it.
-				continue
-			}
-			mappers = append(mappers, m)
+		// Set condition or "AND" together.
+		if condition == nil {
+			condition = expr
+		} else {
+			condition = &influxql.BinaryExpr{Op: influxql.AND, LHS: expr, RHS: condition}
 		}
+	}
 
-		return NewShowMeasurementsExecutor(stmt, mappers, chunkSize), nil
-	*/
+	return q.PlanSelect(&influxql.SelectStatement{
+		Fields: influxql.Fields{
+			{Expr: &influxql.VarRef{Val: "name"}},
+		},
+		Sources: influxql.Sources{
+			&influxql.Measurement{Database: database, Name: "_measurements"},
+		},
+		Condition:  condition,
+		Offset:     stmt.Offset,
+		Limit:      stmt.Limit,
+		SortFields: stmt.SortFields,
+		OmitTime:   true,
+	}, chunkSize)
 }
 
 // planShowTagKeys creates an execution plan for a SHOW MEASUREMENTS statement and returns an Executor.
@@ -575,22 +585,46 @@ func (q *QueryExecutor) planShowTagKeys(stmt *influxql.ShowTagKeysStatement, dat
 		return nil, errors.New("SHOW TAG KEYS doesn't support time in WHERE clause")
 	}
 
-	panic("FIXME: Implement SHOW TAG KEYS")
+	condition := stmt.Condition
+	if len(stmt.Sources) > 0 {
+		if source, ok := stmt.Sources[0].(*influxql.Measurement); ok {
+			var expr influxql.Expr
+			if source.Regex != nil {
+				expr = &influxql.BinaryExpr{
+					Op:  influxql.EQREGEX,
+					LHS: &influxql.VarRef{Val: "name"},
+					RHS: &influxql.RegexLiteral{Val: source.Regex.Val},
+				}
+			} else if source.Name != "" {
+				expr = &influxql.BinaryExpr{
+					Op:  influxql.EQ,
+					LHS: &influxql.VarRef{Val: "name"},
+					RHS: &influxql.StringLiteral{Val: source.Name},
+				}
+			}
 
-	/*
-		return q.PlanSelect(&influxql.SelectStatement{
-			Fields: influxql.Fields{
-				{Expr: &influxql.VarRef{Val: "tagKey"}},
-			},
-			Sources: influxql.Sources{
-				&influxql.Measurement{Database: database, Name: "_tagkeys"},
-			},
-			Condition:  stmt.Condition,
-			Offset:     stmt.Offset,
-			Limit:      stmt.Limit,
-			SortFields: stmt.SortFields,
-		}, chunkSize)
-	*/
+			// Set condition or "AND" together.
+			if condition == nil {
+				condition = expr
+			} else {
+				condition = &influxql.BinaryExpr{Op: influxql.AND, LHS: expr, RHS: condition}
+			}
+		}
+	}
+
+	return q.PlanSelect(&influxql.SelectStatement{
+		Fields: influxql.Fields{
+			{Expr: &influxql.VarRef{Val: "tagKey"}},
+		},
+		Sources: influxql.Sources{
+			&influxql.Measurement{Database: database, Name: "_tagKeys"},
+		},
+		Condition:  condition,
+		Offset:     stmt.Offset,
+		Limit:      stmt.Limit,
+		SortFields: stmt.SortFields,
+		OmitTime:   true,
+	}, chunkSize)
 }
 
 func (q *QueryExecutor) executeStatement(statementID int, stmt influxql.Statement, database string, results chan *influxql.Result, chunkSize int, closing chan struct{}) error {
