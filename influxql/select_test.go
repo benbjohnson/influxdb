@@ -470,12 +470,6 @@ func TestSelect_Fill_Null_Float(t *testing.T) {
 			{Name: "cpu", Tags: ParseTags("host=A"), Time: 12 * Second, Value: 2},
 		}}, nil
 	}
-	ic.SeriesKeysFn = func(opt influxql.IteratorOptions) (influxql.SeriesList, error) {
-		return influxql.SeriesList{
-			{Name: "cpu", Tags: ParseTags("host=A")},
-			{Name: "cpu", Tags: ParseTags("host=B")},
-		}, nil
-	}
 
 	// Execute selection.
 	itrs, err := influxql.Select(MustParseSelectStatement(`SELECT mean(value) FROM cpu WHERE time >= '1970-01-01T00:00:00Z' AND time < '1970-01-01T00:01:00Z' GROUP BY host, time(10s) fill(null)`), &ic)
@@ -488,12 +482,6 @@ func TestSelect_Fill_Null_Float(t *testing.T) {
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 30 * Second, Nil: true}},
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 40 * Second, Nil: true}},
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 50 * Second, Nil: true}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 0 * Second, Nil: true}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 10 * Second, Nil: true}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 20 * Second, Nil: true}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 30 * Second, Nil: true}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 40 * Second, Nil: true}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 50 * Second, Nil: true}},
 	}) {
 		t.Fatalf("unexpected points: %s", spew.Sdump(a))
 	}
@@ -507,12 +495,6 @@ func TestSelect_Fill_Number_Float(t *testing.T) {
 			{Name: "cpu", Tags: ParseTags("host=A"), Time: 12 * Second, Value: 2},
 		}}, nil
 	}
-	ic.SeriesKeysFn = func(opt influxql.IteratorOptions) (influxql.SeriesList, error) {
-		return influxql.SeriesList{
-			{Name: "cpu", Tags: ParseTags("host=A")},
-			{Name: "cpu", Tags: ParseTags("host=B")},
-		}, nil
-	}
 
 	// Execute selection.
 	itrs, err := influxql.Select(MustParseSelectStatement(`SELECT mean(value) FROM cpu WHERE time >= '1970-01-01T00:00:00Z' AND time < '1970-01-01T00:01:00Z' GROUP BY host, time(10s) fill(1)`), &ic)
@@ -525,12 +507,6 @@ func TestSelect_Fill_Number_Float(t *testing.T) {
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 30 * Second, Value: 1}},
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 40 * Second, Value: 1}},
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 50 * Second, Value: 1}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 0 * Second, Value: 1}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 10 * Second, Value: 1}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 20 * Second, Value: 1}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 30 * Second, Value: 1}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 40 * Second, Value: 1}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 50 * Second, Value: 1}},
 	}) {
 		t.Fatalf("unexpected points: %s", spew.Sdump(a))
 	}
@@ -544,12 +520,6 @@ func TestSelect_Fill_Previous_Float(t *testing.T) {
 			{Name: "cpu", Tags: ParseTags("host=A"), Time: 12 * Second, Value: 2},
 		}}, nil
 	}
-	ic.SeriesKeysFn = func(opt influxql.IteratorOptions) (influxql.SeriesList, error) {
-		return influxql.SeriesList{
-			{Name: "cpu", Tags: ParseTags("host=A")},
-			{Name: "cpu", Tags: ParseTags("host=B")},
-		}, nil
-	}
 
 	// Execute selection.
 	itrs, err := influxql.Select(MustParseSelectStatement(`SELECT mean(value) FROM cpu WHERE time >= '1970-01-01T00:00:00Z' AND time < '1970-01-01T00:01:00Z' GROUP BY host, time(10s) fill(previous)`), &ic)
@@ -562,12 +532,6 @@ func TestSelect_Fill_Previous_Float(t *testing.T) {
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 30 * Second, Value: 2}},
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 40 * Second, Value: 2}},
 		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=A"), Time: 50 * Second, Value: 2}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 0 * Second, Value: 2}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 10 * Second, Value: 2}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 20 * Second, Value: 2}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 30 * Second, Value: 2}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 40 * Second, Value: 2}},
-		{&influxql.FloatPoint{Name: "cpu", Tags: ParseTags("host=B"), Time: 50 * Second, Value: 2}},
 	}) {
 		t.Fatalf("unexpected points: %s", spew.Sdump(a))
 	}
@@ -725,10 +689,17 @@ func TestSelect_Raw(t *testing.T) {
 func TestSelect_BinaryExpr_Float(t *testing.T) {
 	var ic IteratorCreator
 	ic.CreateIteratorFn = func(opt influxql.IteratorOptions) (influxql.Iterator, error) {
+		makeAuxFields := func(value float64) []interface{} {
+			aux := make([]interface{}, len(opt.Aux))
+			for i := range aux {
+				aux[i] = value
+			}
+			return aux
+		}
 		return &FloatIterator{Points: []influxql.FloatPoint{
-			{Name: "cpu", Time: 0 * Second, Value: 20, Aux: []interface{}{float64(20)}},
-			{Name: "cpu", Time: 5 * Second, Value: 10, Aux: []interface{}{float64(10)}},
-			{Name: "cpu", Time: 9 * Second, Value: 19, Aux: []interface{}{float64(19)}},
+			{Name: "cpu", Time: 0 * Second, Value: 20, Aux: makeAuxFields(20)},
+			{Name: "cpu", Time: 5 * Second, Value: 10, Aux: makeAuxFields(10)},
+			{Name: "cpu", Time: 9 * Second, Value: 19, Aux: makeAuxFields(19)},
 		}}, nil
 	}
 
@@ -756,6 +727,15 @@ func TestSelect_BinaryExpr_Float(t *testing.T) {
 			},
 		},
 		{
+			Name:      "two variable binary add",
+			Statement: `SELECT value + value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.FloatPoint{Name: "cpu", Time: 0 * Second, Value: 40}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 5 * Second, Value: 20}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 9 * Second, Value: 38}},
+			},
+		},
+		{
 			Name:      "rhs binary multiply",
 			Statement: `SELECT value * 2 FROM cpu`,
 			Points: [][]influxql.Point{
@@ -771,6 +751,15 @@ func TestSelect_BinaryExpr_Float(t *testing.T) {
 				{&influxql.FloatPoint{Name: "cpu", Time: 0 * Second, Value: 40}},
 				{&influxql.FloatPoint{Name: "cpu", Time: 5 * Second, Value: 20}},
 				{&influxql.FloatPoint{Name: "cpu", Time: 9 * Second, Value: 38}},
+			},
+		},
+		{
+			Name:      "two variable binary multiply",
+			Statement: `SELECT value * value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.FloatPoint{Name: "cpu", Time: 0 * Second, Value: 400}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 5 * Second, Value: 100}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 9 * Second, Value: 361}},
 			},
 		},
 		{
@@ -792,6 +781,15 @@ func TestSelect_BinaryExpr_Float(t *testing.T) {
 			},
 		},
 		{
+			Name:      "two variable binary subtract",
+			Statement: `SELECT value - value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.FloatPoint{Name: "cpu", Time: 0 * Second, Value: 0}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 5 * Second, Value: 0}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 9 * Second, Value: 0}},
+			},
+		},
+		{
 			Name:      "rhs binary division",
 			Statement: `SELECT value / 2 FROM cpu`,
 			Points: [][]influxql.Point{
@@ -809,6 +807,15 @@ func TestSelect_BinaryExpr_Float(t *testing.T) {
 				{&influxql.FloatPoint{Name: "cpu", Time: 9 * Second, Value: 2}},
 			},
 		},
+		{
+			Name:      "two variable binary division",
+			Statement: `SELECT value / value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.FloatPoint{Name: "cpu", Time: 0 * Second, Value: 1}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 5 * Second, Value: 1}},
+				{&influxql.FloatPoint{Name: "cpu", Time: 9 * Second, Value: 1}},
+			},
+		},
 	} {
 		itrs, err := influxql.Select(MustParseSelectStatement(test.Statement), &ic)
 		if err != nil {
@@ -823,10 +830,17 @@ func TestSelect_BinaryExpr_Float(t *testing.T) {
 func TestSelect_BinaryExpr_Integer(t *testing.T) {
 	var ic IteratorCreator
 	ic.CreateIteratorFn = func(opt influxql.IteratorOptions) (influxql.Iterator, error) {
+		makeAuxFields := func(value int64) []interface{} {
+			aux := make([]interface{}, len(opt.Aux))
+			for i := range aux {
+				aux[i] = value
+			}
+			return aux
+		}
 		return &IntegerIterator{Points: []influxql.IntegerPoint{
-			{Name: "cpu", Time: 0 * Second, Value: 20, Aux: []interface{}{int64(20)}},
-			{Name: "cpu", Time: 5 * Second, Value: 10, Aux: []interface{}{int64(10)}},
-			{Name: "cpu", Time: 9 * Second, Value: 19, Aux: []interface{}{int64(19)}},
+			{Name: "cpu", Time: 0 * Second, Value: 20, Aux: makeAuxFields(20)},
+			{Name: "cpu", Time: 5 * Second, Value: 10, Aux: makeAuxFields(10)},
+			{Name: "cpu", Time: 9 * Second, Value: 19, Aux: makeAuxFields(19)},
 		}}, nil
 	}
 
@@ -854,6 +868,15 @@ func TestSelect_BinaryExpr_Integer(t *testing.T) {
 			},
 		},
 		{
+			Name:      "two variable binary add",
+			Statement: `SELECT value + value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.IntegerPoint{Name: "cpu", Time: 0 * Second, Value: 40}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 5 * Second, Value: 20}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 9 * Second, Value: 38}},
+			},
+		},
+		{
 			Name:      "rhs binary multiply",
 			Statement: `SELECT value * 2 FROM cpu`,
 			Points: [][]influxql.Point{
@@ -869,6 +892,15 @@ func TestSelect_BinaryExpr_Integer(t *testing.T) {
 				{&influxql.IntegerPoint{Name: "cpu", Time: 0 * Second, Value: 40}},
 				{&influxql.IntegerPoint{Name: "cpu", Time: 5 * Second, Value: 20}},
 				{&influxql.IntegerPoint{Name: "cpu", Time: 9 * Second, Value: 38}},
+			},
+		},
+		{
+			Name:      "two variable binary multiply",
+			Statement: `SELECT value * value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.IntegerPoint{Name: "cpu", Time: 0 * Second, Value: 400}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 5 * Second, Value: 100}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 9 * Second, Value: 361}},
 			},
 		},
 		{
@@ -890,6 +922,15 @@ func TestSelect_BinaryExpr_Integer(t *testing.T) {
 			},
 		},
 		{
+			Name:      "two variable binary subtract",
+			Statement: `SELECT value - value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.IntegerPoint{Name: "cpu", Time: 0 * Second, Value: 0}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 5 * Second, Value: 0}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 9 * Second, Value: 0}},
+			},
+		},
+		{
 			Name:      "rhs binary division",
 			Statement: `SELECT value / 2 FROM cpu`,
 			Points: [][]influxql.Point{
@@ -905,6 +946,15 @@ func TestSelect_BinaryExpr_Integer(t *testing.T) {
 				{&influxql.IntegerPoint{Name: "cpu", Time: 0 * Second, Value: 1}},
 				{&influxql.IntegerPoint{Name: "cpu", Time: 5 * Second, Value: 3}},
 				{&influxql.IntegerPoint{Name: "cpu", Time: 9 * Second, Value: 2}},
+			},
+		},
+		{
+			Name:      "two variable binary division",
+			Statement: `SELECT value / value FROM cpu`,
+			Points: [][]influxql.Point{
+				{&influxql.IntegerPoint{Name: "cpu", Time: 0 * Second, Value: 1}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 5 * Second, Value: 1}},
+				{&influxql.IntegerPoint{Name: "cpu", Time: 9 * Second, Value: 1}},
 			},
 		},
 	} {
